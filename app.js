@@ -1,12 +1,36 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const app = express();
 
 // Global Middleware
-app.use(cors());
+app.use(helmet());
+app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" })); // Allow frontend to load resources like images
+
+// CORS Configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : '*'; // Fallback to all origins if not set
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+// Rate Limiting for API routes
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500, // limit each IP to 500 requests per windowMs
+  message: { success: false, message: 'Too many requests from this IP, please try again later.' }
+});
+app.use('/api', limiter);
+
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
