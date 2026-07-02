@@ -24,6 +24,10 @@ const courseSchema = new mongoose.Schema({
     type: String,
     default: 'no-photo.jpg',
   },
+  banner: {
+    type: String,
+    default: 'no-photo.jpg',
+  },
   previewVideoUrl: {
     type: String,
   },
@@ -51,8 +55,7 @@ const courseSchema = new mongoose.Schema({
   },
   level: {
     type: String,
-    enum: ['Beginner', 'Intermediate', 'Advanced', 'All Levels'],
-    default: 'All Levels',
+    default: '',
   },
   learningOutcomes: [{
     title: String,
