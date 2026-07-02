@@ -33,7 +33,7 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
   fileFilter: function (req, file, cb) {
-    if (file.mimetype.startsWith('video/') || file.mimetype.startsWith('application/') || file.mimetype.startsWith('text/')) {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('application/') || file.mimetype.startsWith('text/')) {
       cb(null, true);
     } else {
       cb(new Error('Invalid file type! Please upload videos or documents.'), false);
