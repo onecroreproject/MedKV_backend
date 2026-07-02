@@ -21,11 +21,10 @@ const categorySchema = new mongoose.Schema({
 });
 
 // Pre-save middleware to create slug from name if not provided
-categorySchema.pre('save', function(next) {
+categorySchema.pre('save', function() {
   if (!this.slug) {
     this.slug = this.name.toLowerCase().replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
-  next();
 });
 
 module.exports = mongoose.model('Category', categorySchema);
