@@ -149,7 +149,7 @@ module.exports = (io, socket) => {
         io.to(socket.roomId).emit('class-ended');
         room.teacher = null;
         room.students = {};
-        await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
+        await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', status: 'Completed', endedAt: new Date(), liveParticipants: 0 });
         io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
         delete activeRooms[socket.roomId];
       }
