@@ -3,8 +3,9 @@ const mongoose = require('mongoose');
 const settingsSchema = new mongoose.Schema({
   general: {
     websiteName: { type: String, default: 'Dr. Sam Reefath Radiology Academy' },
-    tagline: { type: String, default: 'Excellence in Medical Education' },
+    tagline: { type: String, default: 'Learn interpret and lead' },
     logoUrl: { type: String, default: '' },
+    nameLogoUrl: { type: String, default: '' },
     faviconUrl: { type: String, default: '' },
   },
   contact: {

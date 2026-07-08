@@ -57,6 +57,9 @@ const courseSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  languages: [{
+    type: String
+  }],
   learningOutcomes: [{
     title: String,
     desc: String
