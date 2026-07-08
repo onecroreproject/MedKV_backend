@@ -48,6 +48,7 @@ const liveClassRoutes = require('./src/routes/liveClass.routes');
 const recordingRoutes = require('./src/routes/recording.routes');
 const attendanceRoutes = require('./src/routes/attendance.routes');
 const enquiryRoutes = require('./src/routes/enquiry.routes');
+const webrtcRoutes = require('./src/routes/webrtc.routes');
 // ... other routes will be added here ...
 
 // Mount Routes
@@ -61,6 +62,7 @@ app.use('/api/v1/live-classes', liveClassRoutes);
 app.use('/api/v1/recordings', recordingRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/enquiries', enquiryRoutes);
+app.use('/api/v1/webrtc', webrtcRoutes);
 app.use('/api/v1/settings', require('./src/routes/settings.routes'));
 app.use('/api/v1/progress', require('./src/routes/progress.routes'));
 app.use('/api/v1/notifications', require('./src/routes/notification.routes'));

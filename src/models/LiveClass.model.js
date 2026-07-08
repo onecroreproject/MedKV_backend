@@ -44,7 +44,9 @@ const liveClassSchema = new mongoose.Schema({
   },
   zoomLink: {
     type: String,
-    required: [true, 'Please provide the meeting link'],
+    required: function() {
+      return this.meetingProvider === 'zoom';
+    }
   },
   zoomId: {
     type: String,
@@ -52,6 +54,23 @@ const liveClassSchema = new mongoose.Schema({
   zoomPasscode: {
     type: String,
   },
+  meetingProvider: {
+    type: String,
+    enum: ['webrtc', 'zoom'],
+    default: 'webrtc'
+  },
+  roomId: {
+    type: String, // UUID for WebRTC rooms
+  },
+  roomStatus: {
+    type: String,
+    enum: ['waiting', 'active', 'ended'],
+    default: 'waiting'
+  },
+  startedAt: { type: Date },
+  endedAt: { type: Date },
+  liveParticipants: { type: Number, default: 0 },
+  isRecording: { type: Boolean, default: false },
   status: {
     type: String,
     enum: ['Scheduled', 'Live Now', 'Completed', 'Cancelled'],

@@ -10,6 +10,25 @@ connectDB();
 
 const server = http.createServer(app);
 
+// Initialize Socket.io
+const { Server } = require('socket.io');
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  },
+  maxHttpBufferSize: 1e8 // Allow up to 100MB for media/chat
+});
+
+const webrtcHandler = require('./src/socket/webrtcHandler');
+const adminHandler = require('./src/socket/adminHandler');
+
+io.on('connection', (socket) => {
+  // Pass socket instance to handlers
+  webrtcHandler(io, socket);
+  adminHandler(io, socket);
+});
+
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
     console.log(`Port ${PORT} is in use, retrying in 1 second...`);
