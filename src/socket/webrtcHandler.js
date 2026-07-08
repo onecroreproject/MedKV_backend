@@ -19,7 +19,7 @@ module.exports = (io, socket) => {
       activeRooms[roomId] = { teacher: null, students: {} };
     }
 
-    if (userRole === 'Faculty' || userRole === 'teacher') {
+    if (userRole === 'Faculty' || userRole === 'teacher' || userRole === 'admin') {
       activeRooms[roomId].teacher = socket.id;
       console.log(`Teacher ${name} joined room ${roomId}`);
       // Notify everyone the teacher is here
