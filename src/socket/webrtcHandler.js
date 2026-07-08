@@ -16,7 +16,7 @@ module.exports = (io, socket) => {
     socket.userName = name;
 
     if (!activeRooms[roomId]) {
-      activeRooms[roomId] = { teacher: null, students: {} };
+      activeRooms[roomId] = { teacher: null, students: {}, waiting: {} };
     }
 
     if (userRole === 'Faculty' || userRole === 'teacher' || userRole === 'admin') {
@@ -28,11 +28,14 @@ module.exports = (io, socket) => {
       // Update DB to Active
       await LiveClass.updateOne({ _id: roomId }, { roomStatus: 'active', startedAt: new Date() });
     } else {
-      activeRooms[roomId].students[socket.id] = { userId, name };
-      console.log(`Student ${name} joined room ${roomId}`);
-      // Notify teacher that a student joined so teacher can initiate connection
+      activeRooms[roomId].waiting[socket.id] = { userId, name };
+      console.log(`Student ${name} joined waiting room ${roomId}`);
+      // Notify student they are in waiting room
+      socket.emit('joined-waiting-room');
+      
+      // Notify teacher that a student is waiting
       if (activeRooms[roomId].teacher) {
-        io.to(activeRooms[roomId].teacher).emit('student-joined', { socketId: socket.id, name, userId });
+        io.to(activeRooms[roomId].teacher).emit('student-waiting', { socketId: socket.id, name, userId });
       }
     }
 
@@ -79,6 +82,53 @@ module.exports = (io, socket) => {
       message: payload.message,
       timestamp: new Date()
     });
+  });
+
+  // Admit Student from Waiting Room
+  socket.on('admit-student', (payload) => {
+    const { targetId } = payload;
+    const room = activeRooms[socket.roomId];
+    if (room && room.waiting && room.waiting[targetId]) {
+      const studentData = room.waiting[targetId];
+      // Move from waiting to students
+      room.students[targetId] = studentData;
+      delete room.waiting[targetId];
+
+      // Notify the student they are admitted
+      io.to(targetId).emit('admitted');
+      
+      // Notify the teacher to initiate WebRTC connection
+      if (room.teacher) {
+        io.to(room.teacher).emit('student-joined', { socketId: targetId, name: studentData.name, userId: studentData.userId });
+      }
+      
+      // Update DB count
+      const participantCount = Object.keys(room.students).length;
+      LiveClass.updateOne({ _id: socket.roomId }, { liveParticipants: participantCount }).exec();
+      io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: participantCount, status: 'active' });
+    }
+  });
+
+  // Admit All Students
+  socket.on('admit-all', () => {
+    const room = activeRooms[socket.roomId];
+    if (room && room.waiting) {
+      Object.keys(room.waiting).forEach(targetId => {
+        const studentData = room.waiting[targetId];
+        room.students[targetId] = studentData;
+        
+        io.to(targetId).emit('admitted');
+        
+        if (room.teacher) {
+          io.to(room.teacher).emit('student-joined', { socketId: targetId, name: studentData.name, userId: studentData.userId });
+        }
+      });
+      room.waiting = {};
+
+      const participantCount = Object.keys(room.students).length;
+      LiveClass.updateOne({ _id: socket.roomId }, { liveParticipants: participantCount }).exec();
+      io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: participantCount, status: 'active' });
+    }
   });
 
   // Raise Hand
