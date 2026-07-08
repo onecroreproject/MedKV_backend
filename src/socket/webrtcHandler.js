@@ -82,11 +82,53 @@ module.exports = (io, socket) => {
   });
 
   // Raise Hand
-  socket.on('raise-hand', () => {
+  socket.on('raise-hand', (payload) => {
     if (activeRooms[socket.roomId] && activeRooms[socket.roomId].teacher) {
       io.to(activeRooms[socket.roomId].teacher).emit('student-raised-hand', {
         socketId: socket.id,
-        name: socket.userName
+        name: payload?.name || socket.userName
+      });
+    }
+  });
+
+  // End Class
+  socket.on('end-class', async () => {
+    if (socket.roomId && activeRooms[socket.roomId]) {
+      const room = activeRooms[socket.roomId];
+      if (socket.userRole === 'Faculty' || socket.userRole === 'teacher' || socket.userRole === 'admin') {
+        io.to(socket.roomId).emit('class-ended');
+        room.teacher = null;
+        room.students = {};
+        await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
+        io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
+        delete activeRooms[socket.roomId];
+      }
+    }
+  });
+
+  // Host Controls: Kick Participant
+  socket.on('kick-participant', (payload) => {
+    const { targetId } = payload;
+    if (activeRooms[socket.roomId]) {
+      io.to(targetId).emit('force-kick');
+    }
+  });
+
+  // Host Controls: Force Mute Participant
+  socket.on('force-mute', (payload) => {
+    const { targetId } = payload;
+    if (activeRooms[socket.roomId]) {
+      io.to(targetId).emit('force-mute');
+    }
+  });
+
+  // Media State Changed
+  socket.on('media-state-changed', (payload) => {
+    if (activeRooms[socket.roomId] && activeRooms[socket.roomId].teacher) {
+      io.to(activeRooms[socket.roomId].teacher).emit('participant-media-state', {
+        socketId: socket.id,
+        isMuted: payload.isMuted,
+        isVideoOff: payload.isVideoOff
       });
     }
   });
@@ -96,7 +138,7 @@ module.exports = (io, socket) => {
     if (socket.roomId && activeRooms[socket.roomId]) {
       const room = activeRooms[socket.roomId];
       
-      if (socket.userRole === 'Faculty' || socket.userRole === 'teacher') {
+      if (socket.userRole === 'Faculty' || socket.userRole === 'teacher' || socket.userRole === 'admin') {
         room.teacher = null;
         socket.to(socket.roomId).emit('teacher-left');
         await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date() });
