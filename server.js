@@ -23,7 +23,18 @@ const io = new Server(server, {
 const webrtcHandler = require('./src/socket/webrtcHandler');
 const adminHandler = require('./src/socket/adminHandler');
 
+// Expose globally for controllers/utils to emit events
+global.io = io;
+
 io.on('connection', (socket) => {
+  // Join a personal room for user-specific notifications
+  socket.on('setup', (userData) => {
+    if (userData && userData._id) {
+      socket.join(userData._id.toString());
+      socket.emit('connected');
+    }
+  });
+
   // Pass socket instance to handlers
   webrtcHandler(io, socket);
   adminHandler(io, socket);

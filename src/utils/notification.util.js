@@ -22,7 +22,14 @@ const createAndSendNotification = async (userIds, notificationData, sendEmailFla
       link: notificationData.link || ''
     }));
 
-    await Notification.insertMany(notificationsToInsert);
+    const insertedDocs = await Notification.insertMany(notificationsToInsert);
+
+    // Emit real-time notification to connected users
+    if (global.io) {
+      insertedDocs.forEach(notif => {
+        global.io.to(notif.user.toString()).emit('newNotification', notif);
+      });
+    }
 
     // 2. Send emails
     if (sendEmailFlag) {

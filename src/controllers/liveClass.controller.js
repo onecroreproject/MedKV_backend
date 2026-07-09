@@ -72,6 +72,10 @@ exports.createLiveClass = async (req, res) => {
       }, true);
     }
 
+    if (global.io) {
+      global.io.emit('liveClassUpdate', liveClass);
+    }
+
     res.status(201).json({ success: true, data: liveClass });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -93,6 +97,10 @@ exports.updateLiveClass = async (req, res) => {
       runValidators: true
     });
     
+    if (global.io) {
+      global.io.emit('liveClassUpdate', liveClass);
+    }
+
     res.status(200).json({ success: true, data: liveClass });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -110,6 +118,11 @@ exports.deleteLiveClass = async (req, res) => {
     }
     
     await liveClass.deleteOne();
+    
+    if (global.io) {
+      global.io.emit('liveClassUpdate', { _id: req.params.id, deleted: true });
+    }
+
     res.status(200).json({ success: true, data: {} });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

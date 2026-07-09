@@ -25,6 +25,18 @@ const attendanceSchema = new mongoose.Schema({
     type: String,
     enum: ['Present', 'Absent', 'Late Join'],
     default: 'Absent'
+  },
+  chatMessages: {
+    type: Number,
+    default: 0
+  },
+  handRaises: {
+    type: Number,
+    default: 0
+  },
+  isKicked: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

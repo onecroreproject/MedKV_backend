@@ -46,3 +46,29 @@ exports.markAttendance = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+// @desc    Get attendance stats for a student
+// @route   GET /api/v1/attendance/student/:studentId
+// @access  Private
+exports.getStudentAttendanceStats = async (req, res) => {
+  try {
+    const studentId = req.params.studentId;
+    const attendance = await Attendance.find({ student: studentId })
+      .populate('liveClass', 'title date time duration meetingProvider status startedAt endedAt')
+      .sort({ createdAt: -1 });
+      
+    // Calculate aggregate stats
+    const totalClasses = attendance.length;
+    const totalDuration = attendance.reduce((acc, curr) => acc + (curr.duration || 0), 0);
+    const totalChats = attendance.reduce((acc, curr) => acc + (curr.chatMessages || 0), 0);
+    const totalHandRaises = attendance.reduce((acc, curr) => acc + (curr.handRaises || 0), 0);
+    
+    res.status(200).json({
+      success: true,
+      stats: { totalClasses, totalDuration, totalChats, totalHandRaises },
+      history: attendance
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};

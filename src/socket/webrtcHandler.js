@@ -1,4 +1,5 @@
 const LiveClass = require('../models/LiveClass.model');
+const Attendance = require('../models/Attendance.model');
 
 // In-memory store for active rooms
 // Structure: { roomId: { teacher: socketId, students: { studentSocketId: userObj } } }
@@ -74,7 +75,7 @@ module.exports = (io, socket) => {
   });
 
   // Classroom Features: Chat
-  socket.on('send-chat', (payload) => {
+  socket.on('send-chat', async (payload) => {
     io.to(socket.roomId).emit('receive-chat', {
       senderId: socket.id,
       name: socket.userName,
@@ -82,6 +83,13 @@ module.exports = (io, socket) => {
       message: payload.message,
       timestamp: new Date()
     });
+
+    if (socket.userRole !== 'admin' && socket.userRole !== 'Faculty' && socket.userId) {
+      await Attendance.updateOne(
+        { liveClass: socket.roomId, student: socket.userId },
+        { $inc: { chatMessages: 1 } }
+      ).catch(err => console.error(err));
+    }
   });
 
   // Admit Student from Waiting Room
@@ -102,10 +110,16 @@ module.exports = (io, socket) => {
         io.to(room.teacher).emit('student-joined', { socketId: targetId, name: studentData.name, userId: studentData.userId });
       }
       
-      // Update DB count
+      // Update DB count & Attendance tracking
       const participantCount = Object.keys(room.students).length;
       LiveClass.updateOne({ _id: socket.roomId }, { liveParticipants: participantCount }).exec();
       io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: participantCount, status: 'active' });
+
+      Attendance.findOneAndUpdate(
+        { liveClass: socket.roomId, student: studentData.userId },
+        { $setOnInsert: { joinTime: new Date() }, $set: { status: 'Present' } },
+        { upsert: true, new: true }
+      ).exec().catch(err => console.error('Attendance track error:', err));
     }
   });
 
@@ -122,6 +136,12 @@ module.exports = (io, socket) => {
         if (room.teacher) {
           io.to(room.teacher).emit('student-joined', { socketId: targetId, name: studentData.name, userId: studentData.userId });
         }
+
+        Attendance.findOneAndUpdate(
+          { liveClass: socket.roomId, student: studentData.userId },
+          { $setOnInsert: { joinTime: new Date() }, $set: { status: 'Present' } },
+          { upsert: true, new: true }
+        ).exec().catch(err => console.error('Attendance track error:', err));
       });
       room.waiting = {};
 
@@ -132,12 +152,19 @@ module.exports = (io, socket) => {
   });
 
   // Raise Hand
-  socket.on('raise-hand', (payload) => {
+  socket.on('raise-hand', async (payload) => {
     if (activeRooms[socket.roomId] && activeRooms[socket.roomId].teacher) {
       io.to(activeRooms[socket.roomId].teacher).emit('student-raised-hand', {
         socketId: socket.id,
         name: payload?.name || socket.userName
       });
+    }
+    
+    if (socket.userRole !== 'admin' && socket.userRole !== 'Faculty' && socket.userId) {
+      await Attendance.updateOne(
+        { liveClass: socket.roomId, student: socket.userId },
+        { $inc: { handRaises: 1 } }
+      ).catch(err => console.error(err));
     }
   });
 
@@ -157,10 +184,18 @@ module.exports = (io, socket) => {
   });
 
   // Host Controls: Kick Participant
-  socket.on('kick-participant', (payload) => {
+  socket.on('kick-participant', async (payload) => {
     const { targetId } = payload;
     if (activeRooms[socket.roomId]) {
       io.to(targetId).emit('force-kick');
+      const room = activeRooms[socket.roomId];
+      if (room.students[targetId]) {
+        const studentUserId = room.students[targetId].userId;
+        await Attendance.updateOne(
+          { liveClass: socket.roomId, student: studentUserId },
+          { isKicked: true }
+        ).catch(err => console.error(err));
+      }
     }
   });
 
@@ -193,6 +228,23 @@ module.exports = (io, socket) => {
         socket.to(socket.roomId).emit('teacher-left');
         await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date() });
       } else {
+        const studentObj = room.students[socket.id];
+        if (studentObj) {
+           // Calculate duration up to this disconnect
+           try {
+             const attendance = await Attendance.findOne({ liveClass: socket.roomId, student: studentObj.userId });
+             if (attendance && attendance.joinTime) {
+                const now = new Date();
+                const sessionDurationMinutes = Math.max(0, Math.round((now - attendance.joinTime) / 60000));
+                await Attendance.updateOne(
+                  { _id: attendance._id },
+                  { $inc: { duration: sessionDurationMinutes }, leaveTime: now }
+                );
+             }
+           } catch (err) {
+             console.error('Error updating disconnect duration', err);
+           }
+        }
         delete room.students[socket.id];
         if (room.teacher) {
           io.to(room.teacher).emit('student-left', { socketId: socket.id });
