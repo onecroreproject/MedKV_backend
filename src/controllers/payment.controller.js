@@ -232,7 +232,7 @@ exports.downloadReceipt = async (req, res) => {
   try {
     const payment = await Payment.findById(req.params.id)
       .populate('student', 'name email')
-      .populate('course', 'title');
+      .populate('course', 'title duration');
 
     if (!payment) {
       return res.status(404).json({ success: false, message: 'Payment not found' });
@@ -242,10 +242,12 @@ exports.downloadReceipt = async (req, res) => {
       razorpayPaymentId: payment.razorpayPaymentId,
       studentName: payment.student.name,
       studentEmail: payment.student.email,
-      courseName: payment.course.title,
+      courseName: payment.course?.title,
+      courseDuration: payment.course?.duration,
       amount: payment.amount,
       currency: payment.currency,
-      type: payment.type || 'Enrollment'
+      type: payment.type || 'Enrollment',
+      invoiceNumber: `INV-${payment._id.toString().slice(-6).toUpperCase()}`
     };
 
     const pdfBuffer = await generateReceiptPDF(paymentData);
