@@ -6,7 +6,11 @@ const {
   updateLiveClass,
   deleteLiveClass
 } = require('../controllers/liveClass.controller');
-const { createLiveKitToken } = require('../controllers/livekitController');
+const { 
+  createLiveKitToken,
+  forceMuteParticipant,
+  kickParticipant 
+} = require('../controllers/livekitController');
 
 const { protect, authorize } = require('../middleware/auth.middleware');
 
@@ -25,5 +29,12 @@ router.route('/:id')
 // LiveKit Token Route
 router.route('/token/livekit')
   .post(protect, createLiveKitToken);
+
+// Host Controls
+router.route('/mute-participant')
+  .post(protect, authorize('Admin', 'Faculty', 'teacher'), forceMuteParticipant);
+
+router.route('/kick-participant')
+  .post(protect, authorize('Admin', 'Faculty', 'teacher'), kickParticipant);
 
 module.exports = router;
