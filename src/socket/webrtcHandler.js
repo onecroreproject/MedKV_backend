@@ -39,6 +39,12 @@ module.exports = (io, socket) => {
          socket.emit('student-joined', { socketId: studentSocketId, name: student.name, userId: student.userId });
       });
       
+      // Notify teacher about students sitting in the waiting room (early arrivals)
+      Object.keys(room.waiting).forEach(waitingSocketId => {
+         const student = room.waiting[waitingSocketId];
+         socket.emit('student-waiting', { socketId: waitingSocketId, name: student.name, userId: student.userId });
+      });
+      
       // Update DB to Active
       await LiveClass.updateOne({ _id: roomId }, { roomStatus: 'active', startedAt: new Date() });
       io.emit('liveClassUpdate');
