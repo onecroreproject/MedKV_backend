@@ -6,6 +6,7 @@ const {
   updateLiveClass,
   deleteLiveClass
 } = require('../controllers/liveClass.controller');
+const { createLiveKitToken } = require('../controllers/livekitController');
 
 const { protect, authorize } = require('../middleware/auth.middleware');
 
@@ -20,5 +21,9 @@ router.route('/:id')
   .get(getLiveClass)
   .put(protect, authorize('Admin', 'Faculty'), updateLiveClass)
   .delete(protect, authorize('Admin'), deleteLiveClass);
+
+// LiveKit Token Route
+router.route('/token/livekit')
+  .post(protect, createLiveKitToken);
 
 module.exports = router;
