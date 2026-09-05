@@ -72,6 +72,7 @@ app.use('/api/v1/tickets', require('./src/routes/ticket.routes'));
 app.use('/api/v1/upload', require('./src/routes/upload.routes'));
 app.use('/api/v1/dashboard', require('./src/routes/dashboard.routes'));
 app.use('/api/v1/newsletter', require('./src/routes/newsletter.routes'));
+app.use('/api/v1/developer', require('./src/routes/developer.routes'));
 
 // Base route
 app.get('/', (req, res) => {
