@@ -85,10 +85,11 @@ module.exports = (io, socket) => {
     });
 
     if (socket.userRole !== 'admin' && socket.userRole !== 'Faculty' && socket.userId) {
-      await Attendance.updateOne(
+      // Async database persistence without blocking chat delivery
+      Attendance.updateOne(
         { liveClass: socket.roomId, student: socket.userId },
         { $inc: { chatMessages: 1 } }
-      ).catch(err => console.error(err));
+      ).catch(err => console.error('Chat DB persistence error:', err));
     }
   });
 
