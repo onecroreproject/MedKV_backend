@@ -17,26 +17,52 @@ module.exports = (io, socket) => {
     socket.userName = name;
 
     if (!activeRooms[roomId]) {
-      activeRooms[roomId] = { teacher: null, students: {}, waiting: {} };
+      activeRooms[roomId] = { teacher: null, students: {}, waiting: {}, admittedUsers: new Set(), teacherTimeout: null };
     }
 
     if (userRole === 'Faculty' || userRole === 'teacher' || userRole === 'admin') {
-      activeRooms[roomId].teacher = socket.id;
+      const room = activeRooms[roomId];
+      if (room.teacherTimeout) {
+        clearTimeout(room.teacherTimeout);
+        room.teacherTimeout = null;
+        console.log(`Teacher ${name} reconnected to room ${roomId}, timer cleared.`);
+      }
+
+      room.teacher = socket.id;
       console.log(`Teacher ${name} joined room ${roomId}`);
       // Notify everyone the teacher is here
       socket.to(roomId).emit('teacher-joined', { socketId: socket.id });
       
+      // Notify teacher about already existing students (if reconnecting)
+      Object.keys(room.students).forEach(studentSocketId => {
+         const student = room.students[studentSocketId];
+         socket.emit('student-joined', { socketId: studentSocketId, name: student.name, userId: student.userId });
+      });
+      
       // Update DB to Active
       await LiveClass.updateOne({ _id: roomId }, { roomStatus: 'active', startedAt: new Date() });
+      io.emit('liveClassUpdate');
     } else {
-      activeRooms[roomId].waiting[socket.id] = { userId, name };
-      console.log(`Student ${name} joined waiting room ${roomId}`);
-      // Notify student they are in waiting room
-      socket.emit('joined-waiting-room');
-      
-      // Notify teacher that a student is waiting
-      if (activeRooms[roomId].teacher) {
-        io.to(activeRooms[roomId].teacher).emit('student-waiting', { socketId: socket.id, name, userId });
+      const room = activeRooms[roomId];
+      if (room.admittedUsers.has(userId)) {
+        // Auto-admit
+        room.students[socket.id] = { userId, name };
+        console.log(`Student ${name} auto-admitted to room ${roomId}`);
+        socket.emit('admitted');
+        
+        if (room.teacher) {
+          io.to(room.teacher).emit('student-joined', { socketId: socket.id, name, userId });
+        }
+      } else {
+        room.waiting[socket.id] = { userId, name };
+        console.log(`Student ${name} joined waiting room ${roomId}`);
+        // Notify student they are in waiting room
+        socket.emit('joined-waiting-room');
+        
+        // Notify teacher that a student is waiting
+        if (room.teacher) {
+          io.to(room.teacher).emit('student-waiting', { socketId: socket.id, name, userId });
+        }
       }
     }
 
@@ -99,6 +125,8 @@ module.exports = (io, socket) => {
     const room = activeRooms[socket.roomId];
     if (room && room.waiting && room.waiting[targetId]) {
       const studentData = room.waiting[targetId];
+      // Add to session memory
+      room.admittedUsers.add(studentData.userId);
       // Move from waiting to students
       room.students[targetId] = studentData;
       delete room.waiting[targetId];
@@ -130,6 +158,7 @@ module.exports = (io, socket) => {
     if (room && room.waiting) {
       Object.keys(room.waiting).forEach(targetId => {
         const studentData = room.waiting[targetId];
+        room.admittedUsers.add(studentData.userId);
         room.students[targetId] = studentData;
         
         io.to(targetId).emit('admitted');
@@ -174,11 +203,13 @@ module.exports = (io, socket) => {
     if (socket.roomId && activeRooms[socket.roomId]) {
       const room = activeRooms[socket.roomId];
       if (socket.userRole === 'Faculty' || socket.userRole === 'teacher' || socket.userRole === 'admin') {
+        if (room.teacherTimeout) clearTimeout(room.teacherTimeout);
         io.to(socket.roomId).emit('class-ended');
         room.teacher = null;
         room.students = {};
         await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', status: 'Completed', endedAt: new Date(), liveParticipants: 0 });
         io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
+        io.emit('liveClassUpdate');
         delete activeRooms[socket.roomId];
       }
     }
@@ -226,8 +257,19 @@ module.exports = (io, socket) => {
       
       if (socket.userRole === 'Faculty' || socket.userRole === 'teacher' || socket.userRole === 'admin') {
         room.teacher = null;
-        socket.to(socket.roomId).emit('teacher-left');
-        await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date() });
+        console.log(`Teacher disconnected from room ${socket.roomId}. Starting 2 minute grace period.`);
+        
+        socket.to(socket.roomId).emit('teacher-disconnected');
+        
+        room.teacherTimeout = setTimeout(async () => {
+          console.log(`Grace period expired for room ${socket.roomId}. Ending class.`);
+          io.to(socket.roomId).emit('class-ended');
+          io.to(socket.roomId).emit('teacher-left');
+          await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
+          io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
+          io.emit('liveClassUpdate');
+          delete activeRooms[socket.roomId];
+        }, 120000); // 2 minutes
       } else {
         const studentObj = room.students[socket.id];
         if (studentObj) {
