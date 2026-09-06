@@ -31,7 +31,12 @@ exports.getCourses = async (req, res) => {
       select: 'name email profileImage'
     }).populate('category').sort({ createdAt: -1 });
 
-    res.status(200).json({ success: true, count: courses.length, data: courses });
+    const coursesWithStudentCount = await Promise.all(courses.map(async (course) => {
+      const studentCount = await User.countDocuments({ 'enrolledCourses.course': course._id });
+      return { ...course.toObject(), studentCount };
+    }));
+
+    res.status(200).json({ success: true, count: coursesWithStudentCount.length, data: coursesWithStudentCount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

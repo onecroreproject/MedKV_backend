@@ -92,11 +92,36 @@ exports.updateLiveClass = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Class not found' });
     }
     
+    const oldStatus = liveClass.status;
+
     liveClass = await LiveClass.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
     });
     
+    // Notify users if the class just went live
+    if (oldStatus !== 'Live Now' && liveClass.status === 'Live Now') {
+      let userIds = [];
+      if (liveClass.accessControl === 'all') {
+        const allUsers = await User.find({ role: 'student' }).select('_id');
+        userIds = allUsers.map(u => u._id);
+      } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents && liveClass.selectedStudents.length > 0) {
+        userIds = liveClass.selectedStudents;
+      } else if (liveClass.course) {
+        const enrolledUsers = await User.find({ 'enrolledCourses.course': liveClass.course }).select('_id');
+        userIds = enrolledUsers.map(u => u._id);
+      }
+
+      if (userIds.length > 0) {
+        createAndSendNotification(userIds, {
+          title: 'Live Session Started!',
+          message: `The live session "${liveClass.title}" has just started. Join now!`,
+          type: 'live_class_started',
+          link: `/student/dashboard?tab=live`
+        }, true);
+      }
+    }
+
     if (global.io) {
       global.io.emit('liveClassUpdate', liveClass);
     }

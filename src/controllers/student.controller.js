@@ -14,7 +14,10 @@ exports.getStudents = async (req, res) => {
       query['enrolledCourses.course'] = courseId;
     }
 
-    const students = await User.find(query).select('-password').sort({ createdAt: -1 });
+    const students = await User.find(query)
+      .select('-password')
+      .populate('enrolledCourses.course', 'title')
+      .sort({ createdAt: -1 });
     
     res.status(200).json({
       success: true,
