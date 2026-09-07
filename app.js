@@ -25,10 +25,26 @@ app.use(cors({
 // Rate Limiting for API routes
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // limit each IP to 500 requests per windowMs
-  message: { success: false, message: 'Too many requests from this IP, please try again later.' }
+  max: 1000, // limit each IP to 1000 requests per windowMs
+  message: { success: false, message: 'Too many requests from this IP, please try again later.' },
+  skip: (req) => {
+    // Skip rate limiting for localhost / development
+    const ip = req.ip || req.connection.remoteAddress || '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  }
 });
 app.use('/api', limiter);
+
+// Separate, more permissive limiter for auth login endpoints
+const authLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // 50 login attempts per 15 minutes
+  message: { success: false, message: 'Too many login attempts from this IP, please try again after 15 minutes.' },
+  skip: (req) => {
+    const ip = req.ip || req.connection.remoteAddress || '';
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  }
+});
 
 app.use(compression());
 app.use(express.json({ limit: '500mb' }));
@@ -52,7 +68,7 @@ const webrtcRoutes = require('./src/routes/webrtc.routes');
 // ... other routes will be added here ...
 
 // Mount Routes
-app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/auth', authLoginLimiter, authRoutes);
 app.use('/api/v1/students', studentRoutes);
 app.use('/api/v1/faculty', facultyRoutes);
 app.use('/api/v1/courses', courseRoutes);
