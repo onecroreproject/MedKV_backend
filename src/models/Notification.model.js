@@ -16,7 +16,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['course', 'recording', 'live_class', 'system', 'other'],
+    enum: ['course', 'recording', 'live_class', 'live_class_started', 'system', 'other'],
     default: 'system'
   },
   link: {

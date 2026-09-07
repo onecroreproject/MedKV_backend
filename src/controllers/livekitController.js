@@ -21,6 +21,7 @@ const createLiveKitToken = async (req, res) => {
       {
         identity: participantName,
         name: participantName,
+        ttl: '4h', // Token valid for 4 hours \u2014 prevents re-auth latency mid-class
       }
     );
 
@@ -29,7 +30,10 @@ const createLiveKitToken = async (req, res) => {
       room: roomId,
       canPublish: true,
       canSubscribe: true,
+      canPublishData: true,           // Allow data channel messages (chat, signals)
+      roomCreate: isTeacher,          // Teacher creates room instantly — no server wait
       roomAdmin: isTeacher,
+      roomRecord: isTeacher,          // Allow teacher to trigger cloud recording
     });
 
     const token = await at.toJwt();
@@ -39,6 +43,7 @@ const createLiveKitToken = async (req, res) => {
     res.status(500).json({ message: 'Failed to generate token' });
   }
 };
+
 
 const forceMuteParticipant = async (req, res) => {
   try {
