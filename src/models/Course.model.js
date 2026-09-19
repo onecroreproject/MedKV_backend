@@ -108,15 +108,14 @@ courseSchema.virtual('modules', {
 });
 
 // Pre-save middleware to create slug from title if not provided
-courseSchema.pre('save', function(next) {
+courseSchema.pre('save', function() {
   if (!this.slug && this.title) {
     this.slug = this.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   }
-  next();
 });
 
 // Also generate slug on update if title changes and no slug given
-courseSchema.pre('findOneAndUpdate', function(next) {
+courseSchema.pre('findOneAndUpdate', function() {
   const update = this.getUpdate();
   const title = update?.title || update?.$set?.title;
   const slugProvided = update?.slug || update?.$set?.slug;
@@ -124,7 +123,6 @@ courseSchema.pre('findOneAndUpdate', function(next) {
     const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     this.set({ slug });
   }
-  next();
 });
 
 module.exports = mongoose.model('Course', courseSchema);
