@@ -44,6 +44,10 @@ const courseSchema = new mongoose.Schema({
     enum: ['Draft', 'Published'],
     default: 'Draft',
   },
+  isImportant: {
+    type: Boolean,
+    default: false,
+  },
   category: {
     type: mongoose.Schema.ObjectId,
     ref: 'Category',
@@ -57,6 +61,9 @@ const courseSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  features: [{
+    type: String
+  }],
   languages: [{
     type: String
   }],
