@@ -103,10 +103,18 @@ exports.createCourse = async (req, res) => {
 // @access  Private
 exports.updateCourse = async (req, res) => {
   try {
+    // If updating title but no slug given, let the pre-findOneAndUpdate hook handle it
     const course = await Course.findByIdAndUpdate(req.params.id, req.body, {
       new: true, runValidators: true
     });
     if (!course) return res.status(404).json({ success: false, message: 'Course not found' });
+
+    // Backfill slug if still missing (e.g. old documents)
+    if (!course.slug && course.title) {
+      course.slug = course.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      await course.save();
+    }
+
     res.status(200).json({ success: true, data: course });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

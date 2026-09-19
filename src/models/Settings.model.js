@@ -43,7 +43,18 @@ const settingsSchema = new mongoose.Schema({
     termsAndConditions: { type: String, default: 'Terms and conditions go here...' },
     privacyPolicy: { type: String, default: 'Privacy policy goes here...' },
     refundPolicy: { type: String, default: 'Refund policy goes here...' },
-  }
+  },
+  banners: [{
+    imageUrl: { type: String, required: true },
+    title: { type: String, default: '' },
+    highlightText: { type: String, default: '' },
+    description: { type: String, default: '' },
+    buttonText: { type: String, default: '' },
+    link: { type: String, default: '' },
+    button2Text: { type: String, default: '' },
+    button2Link: { type: String, default: '' },
+    isActive: { type: Boolean, default: true }
+  }]
 }, { timestamps: true });
 
 const Settings = mongoose.model('Settings', settingsSchema);
