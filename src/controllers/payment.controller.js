@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const Course = require('../models/Course.model');
 const User = require('../models/User.model');
 const Payment = require('../models/Payment.model');
-const sendEmail = require('../utils/email.util');
+const { sendEmail, generateHTMLTemplate } = require('../utils/email.util');
 const { generateReceiptPDF } = require('../utils/pdf.util');
 
 // Helper: find course by MongoDB _id OR by slug string
@@ -187,10 +187,29 @@ exports.verifyPayment = async (req, res) => {
       const pdfBuffer = await generateReceiptPDF(paymentData);
 
       // Email the student with the PDF attachment
+      const message = `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}.\n\nPayment Summary:\nCourse Fee: ₹${basePrice.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your detailed payment receipt attached.\n\nHappy Learning!`;
+      const htmlMessage = `
+        <p>Dear <strong>${userDoc.name}</strong>,</p>
+        <p>Thank you for enrolling in <strong>${course.title}</strong>! We are thrilled to have you.</p>
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eeeeee;">
+          <h3 style="margin-top: 0; color: #0B1F4D;">Payment Summary</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Course Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right; font-weight: bold;">₹${basePrice.toFixed(2)}</td></tr>
+            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Processing Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${paymentProcessingFee.toFixed(2)}</td></tr>
+            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">GST (18% on Processing):</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${gstOnProcessingFee.toFixed(2)}</td></tr>
+            <tr><td style="padding: 12px 0 0 0; color: #0B1F4D; font-weight: bold;">Total Amount Paid:</td><td style="padding: 12px 0 0 0; text-align: right; color: #0B1F4D; font-weight: bold; font-size: 18px;">₹${totalPayable.toFixed(2)}</td></tr>
+          </table>
+        </div>
+        <p>Please find your detailed PDF payment receipt attached to this email.</p>
+        <p>Happy Learning!</p>
+      `;
+      const html = generateHTMLTemplate('Your Course Receipt', htmlMessage);
+
       await sendEmail({
         email: userDoc.email,
         subject: `Your Receipt for ${course.title}`,
-        message: `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}.\n\nPayment Summary:\nCourse Fee: ₹${basePrice.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your detailed payment receipt attached.\n\nHappy Learning!`,
+        message,
+        html,
         attachments: [
           {
             filename: `Receipt_${razorpay_payment_id}.pdf`,
@@ -351,10 +370,29 @@ exports.resendReceipt = async (req, res) => {
 
     const pdfBuffer = await generateReceiptPDF(paymentData);
 
+    const message = `Dear ${payment.student.name},\n\nPayment Summary:\nCourse Fee: ₹${baseAmount.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your payment receipt attached.\n\nBest Regards,\nAdmin Team`;
+    const htmlMessage = `
+      <p>Dear <strong>${payment.student.name}</strong>,</p>
+      <p>As requested, please find your payment receipt for <strong>${payment.course.title}</strong> attached.</p>
+      <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #eeeeee;">
+        <h3 style="margin-top: 0; color: #0B1F4D;">Payment Summary</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Course Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right; font-weight: bold;">₹${baseAmount.toFixed(2)}</td></tr>
+          <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Processing Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${paymentProcessingFee.toFixed(2)}</td></tr>
+          <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">GST (18% on Processing):</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${gstOnProcessingFee.toFixed(2)}</td></tr>
+          <tr><td style="padding: 12px 0 0 0; color: #0B1F4D; font-weight: bold;">Total Amount Paid:</td><td style="padding: 12px 0 0 0; text-align: right; color: #0B1F4D; font-weight: bold; font-size: 18px;">₹${totalPayable.toFixed(2)}</td></tr>
+        </table>
+      </div>
+      <p>Best Regards,</p>
+      <p>Admin Team</p>
+    `;
+    const html = generateHTMLTemplate('Your Course Receipt (Resent)', htmlMessage);
+
     await sendEmail({
       email: payment.student.email,
       subject: `Your Receipt for ${payment.course.title}`,
-      message: `Dear ${payment.student.name},\n\nPayment Summary:\nCourse Fee: ₹${baseAmount.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your payment receipt attached.\n\nBest Regards,\nAdmin Team`,
+      message,
+      html,
       attachments: [
         {
           filename: `Receipt_${payment.razorpayPaymentId}.pdf`,

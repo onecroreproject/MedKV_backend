@@ -1,6 +1,6 @@
 const authService = require('../services/auth.service');
 const User = require('../models/User.model');
-const sendEmail = require('../utils/email.util');
+const { sendEmail, generateHTMLTemplate } = require('../utils/email.util');
 
 const sendAuthResponse = (user, statusCode, res, rememberMe = false) => {
   const token = authService.generateToken(user._id, rememberMe);
@@ -22,12 +22,19 @@ const handleForgotPassword = async (req, res, role) => {
     const resetUrl = `${clientUrl}/${role.toLowerCase()}/reset-password/${resetToken}`;
     
     const message = `You are receiving this email because you (or someone else) has requested the reset of a password for your ${role} account. \n\n Please click the following link to reset your password: \n\n ${resetUrl}`;
+    const htmlMessage = `
+      <p>Hello,</p>
+      <p>You are receiving this email because you (or someone else) has requested to reset the password for your ${role} account.</p>
+      <p>Please click the button below to reset your password. This link will expire shortly.</p>
+    `;
+    const html = generateHTMLTemplate('Password Reset Request', htmlMessage, 'Reset Password', resetUrl);
     
     try {
       await sendEmail({
         email: user.email,
-        subject: 'Password reset token',
-        message
+        subject: 'Password Reset Request - Dr. Sam Reefath Academy',
+        message,
+        html
       });
       res.status(200).json({ success: true, data: 'Email sent' });
     } catch (err) {

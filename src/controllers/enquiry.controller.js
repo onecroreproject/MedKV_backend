@@ -1,5 +1,5 @@
 const Enquiry = require('../models/Enquiry.model');
-const sendEmail = require('../utils/email.util');
+const { sendEmail, generateHTMLTemplate } = require('../utils/email.util');
 
 /**
  * @desc    Submit a new enquiry
@@ -99,10 +99,27 @@ exports.replyEnquiry = async (req, res) => {
     }
 
     // Send email to user
+    const message = `Dear ${enquiry.name},\n\nThank you for reaching out.\n\n${replyText}\n\nBest Regards,\nAdmissions Team`;
+    
+    // Replace newlines with <br> for HTML rendering of the admin's reply
+    const formattedReply = replyText.replace(/\n/g, '<br/>');
+    
+    const htmlMessage = `
+      <p>Dear <strong>${enquiry.name}</strong>,</p>
+      <p>Thank you for reaching out to us. We have received your enquiry regarding <strong>"${enquiry.subject}"</strong>.</p>
+      <div style="background-color: #f9fafb; padding: 20px; border-left: 4px solid #D4AF37; margin: 25px 0;">
+        ${formattedReply}
+      </div>
+      <p>If you have any more questions, feel free to reply to this email or contact our support.</p>
+      <p>Best Regards,<br/><strong>Admissions Team</strong></p>
+    `;
+    const html = generateHTMLTemplate('Response to your Enquiry', htmlMessage);
+
     await sendEmail({
       email: enquiry.email,
       subject: `Response to your Enquiry: Dr. Sam Reefath Radiology Academy`,
-      message: `Dear ${enquiry.name},\n\nThank you for reaching out.\n\n${replyText}\n\nBest Regards,\nAdmissions Team`
+      message,
+      html
     });
 
     // Auto mark as resolved
