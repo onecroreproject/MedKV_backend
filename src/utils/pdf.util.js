@@ -128,14 +128,15 @@ exports.generateReceiptPDF = (paymentData) => {
       doc.moveTo(480, 315).lineTo(480, 365).stroke('#cccccc');
 
       const courseName = paymentData.courseName || 'Medical Course';
-      const amtStr = `${paymentData.currency} ${paymentData.amount}`;
+      const baseAmtStr = `${paymentData.currency} ${paymentData.baseAmount || paymentData.amount}`;
+      const totalAmtStr = `${paymentData.currency} ${paymentData.amount}`;
 
       doc.font('Helvetica').text('1', 30, 325, { width: 30, align: 'center' });
       doc.font('Helvetica-Bold').text(courseName, 70, 325);
       doc.font('Helvetica').fillColor(secondaryColor).text(`Full Curriculum Access + Live Webinars (${formattedDuration})`, 70, 340);
       doc.fillColor(primaryColor).text('1.00', 350, 325, { width: 60, align: 'center' });
-      doc.text(amtStr, 410, 325, { width: 70, align: 'right' });
-      doc.text(amtStr, 480, 325, { width: 75, align: 'right' });
+      doc.text(baseAmtStr, 410, 325, { width: 70, align: 'right' });
+      doc.text(baseAmtStr, 480, 325, { width: 75, align: 'right' });
 
       // -- Footer Totals Area
       doc.rect(30, 365, 535, 150).stroke('#cccccc');
@@ -150,18 +151,31 @@ exports.generateReceiptPDF = (paymentData) => {
 
       // Right footer totals
       doc.moveTo(350, 395).lineTo(565, 395).stroke('#cccccc');
-      doc.moveTo(350, 425).lineTo(565, 425).stroke('#cccccc');
       
-      doc.font('Helvetica-Bold').text('Sub Total', 360, 377);
-      doc.text(amtStr, 480, 377, { width: 75, align: 'right' });
+      doc.font('Helvetica-Bold').text('Course Fee', 360, 377);
+      doc.text(baseAmtStr, 480, 377, { width: 75, align: 'right' });
 
-      doc.text('Total', 360, 407);
-      doc.text(amtStr, 480, 407, { width: 75, align: 'right' });
+      let yOffset = 405;
+      if (paymentData.paymentProcessingFee > 0) {
+        doc.font('Helvetica').text('Processing Fee', 360, yOffset);
+        doc.text(`${paymentData.currency} ${paymentData.paymentProcessingFee}`, 480, yOffset, { width: 75, align: 'right' });
+        yOffset += 15;
+        doc.text('GST (18% on Processing)', 360, yOffset);
+        doc.text(`${paymentData.currency} ${paymentData.gstOnProcessingFee}`, 480, yOffset, { width: 75, align: 'right' });
+        yOffset += 20;
+      } else {
+        yOffset += 35; // keep spacing consistent if free
+      }
+
+      doc.moveTo(350, yOffset - 10).lineTo(565, yOffset - 10).stroke('#cccccc');
+      
+      doc.font('Helvetica-Bold').text('Total', 360, yOffset - 2);
+      doc.text(totalAmtStr, 480, yOffset - 2, { width: 75, align: 'right' });
 
       // Balance Due Box
-      doc.rect(350, 425, 215, 30).fill('#f9fafb').stroke('#cccccc');
-      doc.fillColor(primaryColor).text('Balance Due', 360, 435);
-      doc.text(`${paymentData.currency} 0.00`, 480, 435, { width: 75, align: 'right' });
+      doc.rect(350, yOffset + 15, 215, 30).fill('#f9fafb').stroke('#cccccc');
+      doc.fillColor(primaryColor).text('Balance Due', 360, yOffset + 25);
+      doc.text(`${paymentData.currency} 0.00`, 480, yOffset + 25, { width: 75, align: 'right' });
 
       // Signature area
       doc.font('Helvetica-Bold').fontSize(10).text('Dr. Sam Reefath Academy', 350, 470, { width: 215, align: 'center' });

@@ -100,6 +100,15 @@ const courseSchema = new mongoose.Schema({
     q: String,
     a: String
   }],
+  earlyBird: {
+    enabled: { type: Boolean, default: false },
+    price: { type: Number, default: 0 },
+    limit: { type: Number, default: 0 }
+  },
+  registrationCount: {
+    type: Number,
+    default: 0
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

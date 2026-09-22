@@ -42,8 +42,19 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    const priceInRupees = course.price > 0 ? course.price : 1; 
-    const amountInPaise = priceInRupees * 100;
+    let basePrice = course.price > 0 ? course.price : 0; 
+    if (course.earlyBird && course.earlyBird.enabled && (course.registrationCount || 0) < course.earlyBird.limit) {
+      basePrice = course.earlyBird.price > 0 ? course.earlyBird.price : 0;
+    }
+    
+    let totalPayable = basePrice;
+    if (basePrice > 0) {
+      totalPayable = Math.round((basePrice / 0.9764) * 100) / 100;
+    } else {
+      totalPayable = 1; // Fallback for razorpay minimum
+    }
+    
+    const amountInPaise = Math.round(totalPayable * 100);
 
     const razorpay = getRazorpayInstance();
     const options = {
@@ -103,14 +114,30 @@ exports.verifyPayment = async (req, res) => {
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found after payment.' });
     }
-    const priceInRupees = course.price > 0 ? course.price : 1;
+    
+    let basePrice = course.price > 0 ? course.price : 0;
+    if (course.earlyBird && course.earlyBird.enabled && (course.registrationCount || 0) < course.earlyBird.limit) {
+      basePrice = course.earlyBird.price > 0 ? course.earlyBird.price : 0;
+    }
+    
+    let totalPayable = basePrice;
+    let paymentProcessingFee = 0;
+    let gstOnProcessingFee = 0;
+    
+    if (basePrice > 0) {
+      totalPayable = Math.round((basePrice / 0.9764) * 100) / 100;
+      const totalProcessingFee = totalPayable - basePrice;
+      paymentProcessingFee = Math.round((totalPayable * 0.02) * 100) / 100;
+      gstOnProcessingFee = totalProcessingFee - paymentProcessingFee;
+    }
+    
     const userDoc = await User.findById(userId);
 
     // Save transaction in DB (use course._id for the ObjectId reference)
     const payment = await Payment.create({
       student: userId,
       course: course._id,
-      amount: priceInRupees,
+      amount: totalPayable,
       currency: 'INR',
       razorpayOrderId: razorpay_order_id,
       razorpayPaymentId: razorpay_payment_id,
@@ -128,11 +155,19 @@ exports.verifyPayment = async (req, res) => {
     }
 
     // Enroll User (always use the real ObjectId course._id)
-    const user = await User.findOneAndUpdate(
+    let user = await User.findOneAndUpdate(
       { _id: userId, 'enrolledCourses.course': { $ne: course._id } },
       { $push: { enrolledCourses: { course: course._id, progress: 0, validUntil } } },
       { new: true }
     );
+    
+    if (user) {
+      // Newly enrolled, increment registration count
+      await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: 1 } });
+    } else {
+      // User was already enrolled
+      user = await User.findById(userId);
+    }
 
     // Generate PDF Receipt
     const paymentData = {
@@ -140,7 +175,10 @@ exports.verifyPayment = async (req, res) => {
       studentName: userDoc.name,
       studentEmail: userDoc.email,
       courseName: course.title,
-      amount: priceInRupees,
+      amount: totalPayable,
+      baseAmount: basePrice,
+      paymentProcessingFee,
+      gstOnProcessingFee,
       currency: 'INR',
       type: 'Enrollment'
     };
@@ -152,7 +190,7 @@ exports.verifyPayment = async (req, res) => {
       await sendEmail({
         email: userDoc.email,
         subject: `Your Receipt for ${course.title}`,
-        message: `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}. Please find your payment receipt attached.\n\nHappy Learning!`,
+        message: `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}.\n\nPayment Summary:\nCourse Fee: ₹${basePrice.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your detailed payment receipt attached.\n\nHappy Learning!`,
         attachments: [
           {
             filename: `Receipt_${razorpay_payment_id}.pdf`,
@@ -200,12 +238,19 @@ exports.getAllPayments = async (req, res) => {
 // @access  Private (Admin)
 exports.downloadSampleReceipt = async (req, res) => {
   try {
+    const baseAmount = Math.round(4999 * 0.9764 * 100) / 100;
+    const paymentProcessingFee = Math.round(4999 * 0.02 * 100) / 100;
+    const gstOnProcessingFee = Math.round((4999 - baseAmount - paymentProcessingFee) * 100) / 100;
+
     const paymentData = {
       razorpayPaymentId: 'pay_SAMPLE1234567',
       studentName: 'John Doe',
       studentEmail: 'john.doe@example.com',
       courseName: 'Sample Medical Course',
       amount: 4999,
+      baseAmount,
+      paymentProcessingFee,
+      gstOnProcessingFee,
       currency: 'INR',
       type: 'Enrollment'
     };
@@ -238,13 +283,21 @@ exports.downloadReceipt = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Payment not found' });
     }
 
+    const totalPayable = payment.amount || 0;
+    const baseAmount = Math.round(totalPayable * 0.9764 * 100) / 100;
+    const paymentProcessingFee = Math.round(totalPayable * 0.02 * 100) / 100;
+    const gstOnProcessingFee = Math.round((totalPayable - baseAmount - paymentProcessingFee) * 100) / 100;
+
     const paymentData = {
       razorpayPaymentId: payment.razorpayPaymentId,
       studentName: payment.student.name,
       studentEmail: payment.student.email,
       courseName: payment.course?.title,
       courseDuration: payment.course?.duration,
-      amount: payment.amount,
+      amount: totalPayable,
+      baseAmount,
+      paymentProcessingFee,
+      gstOnProcessingFee,
       currency: payment.currency,
       type: payment.type || 'Enrollment',
       invoiceNumber: `INV-${payment._id.toString().slice(-6).toUpperCase()}`
@@ -278,12 +331,20 @@ exports.resendReceipt = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Payment not found' });
     }
 
+    const totalPayable = payment.amount || 0;
+    const baseAmount = Math.round(totalPayable * 0.9764 * 100) / 100;
+    const paymentProcessingFee = Math.round(totalPayable * 0.02 * 100) / 100;
+    const gstOnProcessingFee = Math.round((totalPayable - baseAmount - paymentProcessingFee) * 100) / 100;
+
     const paymentData = {
       razorpayPaymentId: payment.razorpayPaymentId,
       studentName: payment.student.name,
       studentEmail: payment.student.email,
       courseName: payment.course.title,
-      amount: payment.amount,
+      amount: totalPayable,
+      baseAmount,
+      paymentProcessingFee,
+      gstOnProcessingFee,
       currency: payment.currency,
       type: payment.type || 'Enrollment'
     };
@@ -293,7 +354,7 @@ exports.resendReceipt = async (req, res) => {
     await sendEmail({
       email: payment.student.email,
       subject: `Your Receipt for ${payment.course.title}`,
-      message: `Dear ${payment.student.name},\n\nPlease find your payment receipt attached.\n\nBest Regards,\nAdmin Team`,
+      message: `Dear ${payment.student.name},\n\nPayment Summary:\nCourse Fee: ₹${baseAmount.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your payment receipt attached.\n\nBest Regards,\nAdmin Team`,
       attachments: [
         {
           filename: `Receipt_${payment.razorpayPaymentId}.pdf`,
