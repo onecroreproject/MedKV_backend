@@ -264,23 +264,27 @@ module.exports = (io, socket) => {
     }
   });
 
-  // Host Controls: Mute All Students
-  socket.on('mute-all', () => {
+  // Host Controls: Force Unmute Participant
+  socket.on('force-unmute', (payload) => {
+    const { targetId } = payload; // targetId is the userId
     if (activeRooms[socket.roomId]) {
       const room = activeRooms[socket.roomId];
-      Object.keys(room.students).forEach(studentSocketId => {
-        io.to(studentSocketId).emit('force-mute');
-      });
+      const studentSocketId = Object.keys(room.students).find(sid => room.students[sid].userId === targetId);
+      if (studentSocketId) {
+        io.to(studentSocketId).emit('force-unmute');
+      }
     }
   });
 
-  // Host Controls: Camera Off All Students
-  socket.on('camera-off-all', () => {
+  // Host Controls: Force Camera On Participant
+  socket.on('force-camera-on', (payload) => {
+    const { targetId } = payload; // targetId is the userId
     if (activeRooms[socket.roomId]) {
       const room = activeRooms[socket.roomId];
-      Object.keys(room.students).forEach(studentSocketId => {
-        io.to(studentSocketId).emit('force-camera-off');
-      });
+      const studentSocketId = Object.keys(room.students).find(sid => room.students[sid].userId === targetId);
+      if (studentSocketId) {
+        io.to(studentSocketId).emit('force-camera-on');
+      }
     }
   });
 

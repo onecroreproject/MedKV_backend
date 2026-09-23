@@ -143,43 +143,45 @@ const forceCameraOffParticipant = async (req, res) => {
   }
 };
 
-const muteAll = async (req, res) => {
+const forceUnmuteParticipant = async (req, res) => {
   try {
-    const { roomId } = req.body;
+    const { roomId, identity } = req.body;
+    if (!roomId || !identity) return res.status(400).json({ message: 'Room ID and identity required' });
+
     const svc = getRoomService();
-    const participants = await svc.listParticipants(roomId);
+    const participant = await svc.getParticipant(roomId, identity);
     
-    for (const p of participants) {
-      if (p.permission?.canPublish) { // basic check
-        const audioTracks = p.tracks.filter(t => t.type === 1);
-        for (const track of audioTracks) {
-          await svc.mutePublishedTrack(roomId, p.identity, track.sid, true).catch(e => console.log(e));
-        }
-      }
+    // Unmute all microphone tracks
+    const audioTracks = participant.tracks.filter(t => t.type === 1); // 1 is Audio
+    for (const track of audioTracks) {
+      await svc.mutePublishedTrack(roomId, identity, track.sid, false);
     }
-    res.status(200).json({ message: 'All muted' });
+    
+    res.status(200).json({ message: 'Participant unmuted' });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to mute all' });
+    console.error('Error force unmuting:', error);
+    res.status(500).json({ message: 'Failed to unmute participant' });
   }
 };
 
-const cameraOffAll = async (req, res) => {
+const forceCameraOnParticipant = async (req, res) => {
   try {
-    const { roomId } = req.body;
+    const { roomId, identity } = req.body;
+    if (!roomId || !identity) return res.status(400).json({ message: 'Room ID and identity required' });
+
     const svc = getRoomService();
-    const participants = await svc.listParticipants(roomId);
+    const participant = await svc.getParticipant(roomId, identity);
     
-    for (const p of participants) {
-      if (p.permission?.canPublish) {
-        const videoTracks = p.tracks.filter(t => t.type === 2);
-        for (const track of videoTracks) {
-          await svc.mutePublishedTrack(roomId, p.identity, track.sid, true).catch(e => console.log(e));
-        }
-      }
+    // Unmute all camera tracks
+    const videoTracks = participant.tracks.filter(t => t.type === 2); // 2 is Video
+    for (const track of videoTracks) {
+      await svc.mutePublishedTrack(roomId, identity, track.sid, false);
     }
-    res.status(200).json({ message: 'All cameras off' });
+    
+    res.status(200).json({ message: 'Participant camera turned on' });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to turn off all cameras' });
+    console.error('Error force camera on:', error);
+    res.status(500).json({ message: 'Failed to turn on camera' });
   }
 };
 
@@ -188,6 +190,6 @@ module.exports = {
   forceMuteParticipant,
   kickParticipant,
   forceCameraOffParticipant,
-  muteAll,
-  cameraOffAll
+  forceUnmuteParticipant,
+  forceCameraOnParticipant
 };
