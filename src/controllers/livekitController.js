@@ -1,4 +1,6 @@
 const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
+const LiveClass = require('../models/LiveClass.model');
+const User = require('../models/User.model');
 
 const getRoomService = () => {
   const host = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
@@ -8,12 +10,50 @@ const getRoomService = () => {
 const createLiveKitToken = async (req, res) => {
   try {
     const { roomId, participantName, role } = req.body;
+    const userId = req.user.id;
 
     if (!roomId || !participantName) {
       return res.status(400).json({ message: 'Room ID and participant name are required' });
     }
 
-    const isTeacher = role === 'teacher' || role === 'admin' || role === 'Faculty';
+    // Authorization Check
+    const liveClass = await LiveClass.findById(roomId);
+    if (!liveClass) {
+      return res.status(404).json({ message: 'Live class not found' });
+    }
+
+    let isAuthorized = false;
+    let isTeacher = false;
+
+    if (req.user.role === 'admin') {
+      isAuthorized = true;
+      isTeacher = true;
+    } else if (req.user.role === 'Faculty' || req.user.role === 'teacher') {
+      if (liveClass.faculty.toString() === userId) {
+        isAuthorized = true;
+        isTeacher = true;
+      } else {
+        return res.status(403).json({ message: 'Not authorized to host this class' });
+      }
+    } else {
+      // Student check
+      if (liveClass.accessControl === 'all') {
+        isAuthorized = true;
+      } else if (liveClass.accessControl === 'selected') {
+        if (liveClass.selectedStudents.includes(userId)) {
+          isAuthorized = true;
+        }
+      } else if (liveClass.course) {
+        const user = await User.findById(userId);
+        if (user && user.enrolledCourses.some(ec => ec.course.toString() === liveClass.course.toString())) {
+          isAuthorized = true;
+        }
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ message: 'Not authorized to join this class' });
+    }
 
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
@@ -21,7 +61,7 @@ const createLiveKitToken = async (req, res) => {
       {
         identity: participantName,
         name: participantName,
-        ttl: '4h', // Token valid for 4 hours \u2014 prevents re-auth latency mid-class
+        ttl: '4h', // Token valid for 4 hours — prevents re-auth latency mid-class
       }
     );
 

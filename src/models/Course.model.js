@@ -57,6 +57,18 @@ const courseSchema = new mongoose.Schema({
     type: String, // e.g. "30", "90", "180", "365", "lifetime"
     default: "lifetime"
   },
+  startDate: {
+    type: String,
+    default: ''
+  },
+  startTime: {
+    type: String,
+    default: ''
+  },
+  endTime: {
+    type: String,
+    default: ''
+  },
   level: {
     type: String,
     default: '',

@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const Recording = require('../models/Recording.model');
 const LiveClass = require('../models/LiveClass.model');
+const RecordingSession = require('../models/RecordingSession.model');
 
 // Ensure upload dir exists
 const uploadDir = path.join(__dirname, '../../uploads/recordings');
@@ -58,68 +59,81 @@ router.post('/upload-recording', upload.single('recording'), async (req, res) =>
 
 // --- NEW CHUNKED RECORDING SYSTEM ---
 
-// In-memory state for tracking recording sessions
-const recordingSessions = {};
-
-router.post('/recording/start', (req, res) => {
+router.post('/recording/start', async (req, res) => {
   const { recordingSessionId, roomId, teacherId, courseId } = req.body;
   if (!recordingSessionId || !roomId) return res.status(400).json({ error: 'Missing params' });
   
   const filepath = path.join(uploadDir, `class-${roomId}-${recordingSessionId}.webm`);
   
-  recordingSessions[recordingSessionId] = {
-    expectedChunkIndex: 0,
-    receivedChunks: 0,
-    filepath,
-    roomId,
-    teacherId,
-    courseId: courseId || null,
-    status: 'recording'
-  };
-  
-  res.status(200).json({ success: true, message: 'Recording started' });
+  try {
+    await RecordingSession.create({
+      sessionId: recordingSessionId,
+      roomId,
+      teacherId,
+      courseId: courseId || null,
+      expectedChunkIndex: 0,
+      receivedChunks: 0,
+      filepath,
+      status: 'recording'
+    });
+    
+    res.status(200).json({ success: true, message: 'Recording started' });
+  } catch (error) {
+    console.error('Error starting recording session:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 router.post('/recording/chunk', upload.single('chunk'), async (req, res) => {
   const { recordingSessionId, chunkIndex } = req.body;
   const chunkFile = req.file;
   
-  const session = recordingSessions[recordingSessionId];
-  if (!session || !chunkFile) {
+  if (!recordingSessionId || !chunkFile) {
     if (chunkFile) fs.unlinkSync(chunkFile.path); // cleanup
     return res.status(400).json({ error: 'Invalid session or missing chunk' });
   }
 
-  // Very strict ordering check to prevent file corruption
-  const idx = parseInt(chunkIndex, 10);
-  if (idx !== session.expectedChunkIndex) {
-    fs.unlinkSync(chunkFile.path); // reject out of order chunks
-    return res.status(400).json({ error: `Out of order chunk. Expected ${session.expectedChunkIndex}, got ${idx}` });
-  }
-  
   try {
+    const session = await RecordingSession.findOne({ sessionId: recordingSessionId });
+    if (!session || session.status !== 'recording') {
+      fs.unlinkSync(chunkFile.path); // cleanup
+      return res.status(400).json({ error: 'Invalid session or session not active' });
+    }
+
+    // Very strict ordering check to prevent file corruption
+    const idx = parseInt(chunkIndex, 10);
+    if (idx !== session.expectedChunkIndex) {
+      fs.unlinkSync(chunkFile.path); // reject out of order chunks
+      return res.status(400).json({ error: `Out of order chunk. Expected ${session.expectedChunkIndex}, got ${idx}` });
+    }
+  
     const chunkData = fs.readFileSync(chunkFile.path);
     fs.appendFileSync(session.filepath, chunkData);
     fs.unlinkSync(chunkFile.path); // remove temp chunk
 
     session.receivedChunks++;
     session.expectedChunkIndex++;
+    await session.save();
     
     res.status(200).json({ success: true, receivedChunks: session.receivedChunks });
   } catch (err) {
     console.error('Error appending chunk:', err);
+    if (chunkFile && fs.existsSync(chunkFile.path)) fs.unlinkSync(chunkFile.path);
     res.status(500).json({ error: 'Failed to append chunk' });
   }
 });
 
 router.post('/recording/finalize', async (req, res) => {
   const { recordingSessionId } = req.body;
-  const session = recordingSessions[recordingSessionId];
-  
-  if (!session) return res.status(400).json({ error: 'Invalid session' });
   
   try {
+    const session = await RecordingSession.findOne({ sessionId: recordingSessionId });
+    if (!session || session.status !== 'recording') {
+      return res.status(400).json({ error: 'Invalid or inactive session' });
+    }
+    
     session.status = 'finalized';
+    await session.save();
     
     // Save metadata
     const recording = await Recording.create({
@@ -133,8 +147,6 @@ router.post('/recording/finalize', async (req, res) => {
     });
 
     await LiveClass.updateOne({ _id: session.roomId }, { isRecording: false });
-
-    delete recordingSessions[recordingSessionId];
     
     res.status(200).json({ success: true, recording });
   } catch (error) {
