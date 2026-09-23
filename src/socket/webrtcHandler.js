@@ -252,6 +252,38 @@ module.exports = (io, socket) => {
     }
   });
 
+  // Host Controls: Force Camera Off Participant
+  socket.on('force-camera-off', (payload) => {
+    const { targetId } = payload; // targetId is the userId
+    if (activeRooms[socket.roomId]) {
+      const room = activeRooms[socket.roomId];
+      const studentSocketId = Object.keys(room.students).find(sid => room.students[sid].userId === targetId);
+      if (studentSocketId) {
+        io.to(studentSocketId).emit('force-camera-off');
+      }
+    }
+  });
+
+  // Host Controls: Mute All Students
+  socket.on('mute-all', () => {
+    if (activeRooms[socket.roomId]) {
+      const room = activeRooms[socket.roomId];
+      Object.keys(room.students).forEach(studentSocketId => {
+        io.to(studentSocketId).emit('force-mute');
+      });
+    }
+  });
+
+  // Host Controls: Camera Off All Students
+  socket.on('camera-off-all', () => {
+    if (activeRooms[socket.roomId]) {
+      const room = activeRooms[socket.roomId];
+      Object.keys(room.students).forEach(studentSocketId => {
+        io.to(studentSocketId).emit('force-camera-off');
+      });
+    }
+  });
+
   // Media State Changed
   socket.on('media-state-changed', (payload) => {
     if (activeRooms[socket.roomId] && activeRooms[socket.roomId].teacher) {

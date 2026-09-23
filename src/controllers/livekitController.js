@@ -122,8 +122,72 @@ const kickParticipant = async (req, res) => {
   }
 };
 
+const forceCameraOffParticipant = async (req, res) => {
+  try {
+    const { roomId, identity } = req.body;
+    if (!roomId || !identity) return res.status(400).json({ message: 'Room ID and identity required' });
+
+    const svc = getRoomService();
+    const participant = await svc.getParticipant(roomId, identity);
+    
+    // Mute all camera tracks
+    const videoTracks = participant.tracks.filter(t => t.type === 2); // 2 is Video
+    for (const track of videoTracks) {
+      await svc.mutePublishedTrack(roomId, identity, track.sid, true);
+    }
+    
+    res.status(200).json({ message: 'Participant camera turned off' });
+  } catch (error) {
+    console.error('Error force camera off:', error);
+    res.status(500).json({ message: 'Failed to turn off camera' });
+  }
+};
+
+const muteAll = async (req, res) => {
+  try {
+    const { roomId } = req.body;
+    const svc = getRoomService();
+    const participants = await svc.listParticipants(roomId);
+    
+    for (const p of participants) {
+      if (p.permission?.canPublish) { // basic check
+        const audioTracks = p.tracks.filter(t => t.type === 1);
+        for (const track of audioTracks) {
+          await svc.mutePublishedTrack(roomId, p.identity, track.sid, true).catch(e => console.log(e));
+        }
+      }
+    }
+    res.status(200).json({ message: 'All muted' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to mute all' });
+  }
+};
+
+const cameraOffAll = async (req, res) => {
+  try {
+    const { roomId } = req.body;
+    const svc = getRoomService();
+    const participants = await svc.listParticipants(roomId);
+    
+    for (const p of participants) {
+      if (p.permission?.canPublish) {
+        const videoTracks = p.tracks.filter(t => t.type === 2);
+        for (const track of videoTracks) {
+          await svc.mutePublishedTrack(roomId, p.identity, track.sid, true).catch(e => console.log(e));
+        }
+      }
+    }
+    res.status(200).json({ message: 'All cameras off' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to turn off all cameras' });
+  }
+};
+
 module.exports = {
   createLiveKitToken,
   forceMuteParticipant,
-  kickParticipant
+  kickParticipant,
+  forceCameraOffParticipant,
+  muteAll,
+  cameraOffAll
 };

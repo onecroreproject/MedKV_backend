@@ -9,7 +9,10 @@ const {
 const { 
   createLiveKitToken,
   forceMuteParticipant,
-  kickParticipant 
+  kickParticipant,
+  forceCameraOffParticipant,
+  muteAll,
+  cameraOffAll
 } = require('../controllers/livekitController');
 
 const { protect, authorize } = require('../middleware/auth.middleware');
@@ -34,7 +37,16 @@ router.route('/token/livekit')
 router.route('/mute-participant')
   .post(protect, authorize('Admin', 'Faculty', 'teacher'), forceMuteParticipant);
 
+router.route('/camera-off-participant')
+  .post(protect, authorize('Admin', 'Faculty', 'teacher'), forceCameraOffParticipant);
+
 router.route('/kick-participant')
   .post(protect, authorize('Admin', 'Faculty', 'teacher'), kickParticipant);
+
+router.route('/mute-all')
+  .post(protect, authorize('Admin', 'Faculty', 'teacher'), muteAll);
+
+router.route('/camera-off-all')
+  .post(protect, authorize('Admin', 'Faculty', 'teacher'), cameraOffAll);
 
 module.exports = router;
