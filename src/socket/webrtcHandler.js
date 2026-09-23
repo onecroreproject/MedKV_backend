@@ -231,6 +231,10 @@ module.exports = (io, socket) => {
       
       if (studentSocketId) {
         io.to(studentSocketId).emit('force-kick');
+        
+        // Ensure they cannot bypass the waiting room if they try to rejoin
+        room.admittedUsers.delete(targetId);
+        
         const studentUserId = room.students[studentSocketId].userId;
         await Attendance.updateOne(
           { liveClass: socket.roomId, student: studentUserId },
