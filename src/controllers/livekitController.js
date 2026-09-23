@@ -10,7 +10,7 @@ const getRoomService = () => {
 const createLiveKitToken = async (req, res) => {
   try {
     const { roomId, participantName, role } = req.body;
-    const userId = req.user.id;
+    const userId = req.user._id || req.user.id;
 
     if (!roomId || !participantName) {
       return res.status(400).json({ message: 'Room ID and participant name are required' });
@@ -25,10 +25,10 @@ const createLiveKitToken = async (req, res) => {
     let isAuthorized = false;
     let isTeacher = false;
 
-    if (req.user.role === 'admin') {
+    if (req.user.role.toLowerCase() === 'admin') {
       isAuthorized = true;
       isTeacher = true;
-    } else if (req.user.role === 'Faculty' || req.user.role === 'teacher') {
+    } else if (req.user.role.toLowerCase() === 'faculty' || req.user.role.toLowerCase() === 'teacher') {
       if (liveClass.faculty.toString() === userId) {
         isAuthorized = true;
         isTeacher = true;
@@ -59,7 +59,7 @@ const createLiveKitToken = async (req, res) => {
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
       {
-        identity: participantName,
+        identity: userId.toString(),
         name: participantName,
         ttl: '4h', // Token valid for 4 hours — prevents re-auth latency mid-class
       }
