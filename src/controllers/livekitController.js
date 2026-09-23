@@ -61,6 +61,7 @@ const createLiveKitToken = async (req, res) => {
       {
         identity: userId.toString(),
         name: participantName,
+        metadata: JSON.stringify({ isTeacher }),
         ttl: '4h', // Token valid for 4 hours — prevents re-auth latency mid-class
       }
     );
