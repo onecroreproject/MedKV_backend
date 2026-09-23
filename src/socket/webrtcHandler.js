@@ -223,12 +223,15 @@ module.exports = (io, socket) => {
 
   // Host Controls: Kick Participant
   socket.on('kick-participant', async (payload) => {
-    const { targetId } = payload;
+    const { targetId } = payload; // targetId is the userId (LiveKit identity)
     if (activeRooms[socket.roomId]) {
-      io.to(targetId).emit('force-kick');
       const room = activeRooms[socket.roomId];
-      if (room.students[targetId]) {
-        const studentUserId = room.students[targetId].userId;
+      // Find the socket ID of the student with this userId
+      const studentSocketId = Object.keys(room.students).find(sid => room.students[sid].userId === targetId);
+      
+      if (studentSocketId) {
+        io.to(studentSocketId).emit('force-kick');
+        const studentUserId = room.students[studentSocketId].userId;
         await Attendance.updateOne(
           { liveClass: socket.roomId, student: studentUserId },
           { isKicked: true }
@@ -239,9 +242,13 @@ module.exports = (io, socket) => {
 
   // Host Controls: Force Mute Participant
   socket.on('force-mute', (payload) => {
-    const { targetId } = payload;
+    const { targetId } = payload; // targetId is the userId
     if (activeRooms[socket.roomId]) {
-      io.to(targetId).emit('force-mute');
+      const room = activeRooms[socket.roomId];
+      const studentSocketId = Object.keys(room.students).find(sid => room.students[sid].userId === targetId);
+      if (studentSocketId) {
+        io.to(studentSocketId).emit('force-mute');
+      }
     }
   });
 
