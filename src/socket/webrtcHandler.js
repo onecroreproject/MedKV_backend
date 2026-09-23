@@ -20,7 +20,7 @@ module.exports = (io, socket) => {
       activeRooms[roomId] = { teacher: null, students: {}, waiting: {}, admittedUsers: new Set(), teacherTimeout: null };
     }
 
-    if (userRole === 'Faculty' || userRole === 'teacher' || userRole === 'admin') {
+    if (userRole?.toLowerCase() === 'faculty' || userRole?.toLowerCase() === 'teacher' || userRole?.toLowerCase() === 'admin') {
       const room = activeRooms[roomId];
       if (room.teacherTimeout) {
         clearTimeout(room.teacherTimeout);
