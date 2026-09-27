@@ -164,6 +164,40 @@ exports.verifyPayment = async (req, res) => {
     if (user) {
       // Newly enrolled, increment registration count
       await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: 1 } });
+      
+      // Push to Google Sheets if Webhook URL is configured
+      if (process.env.GOOGLE_SHEETS_WEBHOOK_URL) {
+        try {
+          const populatedUser = await User.findById(userId).populate('enrolledCourses.course');
+          
+          let totalProgress = 0;
+          let courseNames = [];
+          if (populatedUser && populatedUser.enrolledCourses) {
+            populatedUser.enrolledCourses.forEach(ec => {
+              totalProgress += (ec.progress || 0);
+              if (ec.course && ec.course.title) courseNames.push(ec.course.title);
+            });
+          }
+          
+          const count = courseNames.length;
+          const avgProgress = count > 0 ? Math.round(totalProgress / count) : 0;
+
+          const axios = require('axios');
+          await axios.post(process.env.GOOGLE_SHEETS_WEBHOOK_URL, {
+            name: populatedUser.name,
+            email: populatedUser.email,
+            phoneNumber: populatedUser.phoneNumber || "",
+            isActive: populatedUser.isActive,
+            registeredDate: new Date().toISOString(),
+            courseCount: count,
+            courseNames: courseNames.join(", "),
+            avgProgress: `${avgProgress}%`
+          });
+          console.log('Successfully pushed enrollment to Google Sheets');
+        } catch (err) {
+          console.error('Failed to push enrollment to Google Sheets:', err.message);
+        }
+      }
     } else {
       // User was already enrolled
       user = await User.findById(userId);
