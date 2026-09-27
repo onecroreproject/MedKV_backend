@@ -2,8 +2,10 @@ const authService = require('../services/auth.service');
 const User = require('../models/User.model');
 const { sendEmail, generateHTMLTemplate } = require('../utils/email.util');
 
-const sendAuthResponse = (user, statusCode, res, rememberMe = false) => {
+const sendAuthResponse = async (user, statusCode, res, rememberMe = false) => {
   const token = authService.generateToken(user._id, rememberMe);
+  user.activeToken = token;
+  await user.save({ validateBeforeSave: false });
   res.status(statusCode).json({
     success: true, token,
     user: { id: user._id, name: user.name, email: user.email, role: user.role }
@@ -51,7 +53,7 @@ const handleForgotPassword = async (req, res, role) => {
 const handleResetPassword = async (req, res) => {
   try {
     const user = await authService.resetPassword(req.params.resettoken, req.body.password);
-    sendAuthResponse(user, 200, res);
+    await sendAuthResponse(user, 200, res);
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
@@ -68,7 +70,7 @@ exports.validateResetToken = async (req, res) => {
 
 // --- STUDENT AUTH ---
 exports.registerStudent = async (req, res) => {
-  try { sendAuthResponse(await authService.registerUser(req.body, 'Student'), 201, res); } 
+  try { await sendAuthResponse(await authService.registerUser(req.body, 'Student'), 201, res); } 
   catch (error) { res.status(400).json({ success: false, message: error.message }); }
 };
 
@@ -76,7 +78,7 @@ exports.loginStudent = async (req, res) => {
   try { 
     const clientInfo = { ip: req.ip, userAgent: req.headers['user-agent'] };
     const rememberMe = req.body.rememberMe === true;
-    sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Student', clientInfo), 200, res, rememberMe); 
+    await sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Student', clientInfo), 200, res, rememberMe); 
   } 
   catch (error) { res.status(401).json({ success: false, message: error.message }); }
 };
@@ -86,14 +88,14 @@ exports.resetPasswordStudent = async (req, res) => handleResetPassword(req, res)
 
 // --- FACULTY AUTH ---
 exports.registerFaculty = async (req, res) => {
-  try { sendAuthResponse(await authService.registerUser(req.body, 'Faculty'), 201, res); } 
+  try { await sendAuthResponse(await authService.registerUser(req.body, 'Faculty'), 201, res); } 
   catch (error) { res.status(400).json({ success: false, message: error.message }); }
 };
 
 exports.loginFaculty = async (req, res) => {
   try { 
     const clientInfo = { ip: req.ip, userAgent: req.headers['user-agent'] };
-    sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Faculty', clientInfo), 200, res); 
+    await sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Faculty', clientInfo), 200, res); 
   } 
   catch (error) { res.status(401).json({ success: false, message: error.message }); }
 };
@@ -103,14 +105,14 @@ exports.resetPasswordFaculty = async (req, res) => handleResetPassword(req, res)
 
 // --- ADMIN AUTH ---
 exports.registerAdmin = async (req, res) => {
-  try { sendAuthResponse(await authService.registerUser(req.body, 'Admin'), 201, res); } 
+  try { await sendAuthResponse(await authService.registerUser(req.body, 'Admin'), 201, res); } 
   catch (error) { res.status(400).json({ success: false, message: error.message }); }
 };
 
 exports.loginAdmin = async (req, res) => {
   try { 
     const clientInfo = { ip: req.ip, userAgent: req.headers['user-agent'] };
-    sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Admin', clientInfo), 200, res); 
+    await sendAuthResponse(await authService.loginUser(req.body.email, req.body.password, 'Admin', clientInfo), 200, res); 
   } 
   catch (error) { res.status(401).json({ success: false, message: error.message }); }
 };
@@ -173,7 +175,7 @@ exports.updatePassword = async (req, res) => {
     user.password = req.body.newPassword;
     await user.save();
 
-    sendAuthResponse(user, 200, res);
+    await sendAuthResponse(user, 200, res);
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }

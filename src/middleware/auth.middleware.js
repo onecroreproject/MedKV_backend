@@ -27,6 +27,10 @@ exports.protect = async (req, res, next) => {
         return res.status(401).json({ success: false, message: 'User no longer exists' });
     }
 
+    if (req.user.activeToken && req.user.activeToken !== token) {
+        return res.status(401).json({ success: false, message: 'SESSION_REVOKED' });
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ success: false, message: 'Not authorized to access this route' });

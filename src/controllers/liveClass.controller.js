@@ -1,6 +1,7 @@
 const LiveClass = require('../models/LiveClass.model');
 const User = require('../models/User.model');
 const { createAndSendNotification } = require('../utils/notification.util');
+const dispatcher = require('../services/notificationDispatcher');
 
 // @desc    Get all live classes
 // @route   GET /api/v1/live-classes
@@ -64,12 +65,13 @@ exports.createLiveClass = async (req, res) => {
     }
 
     if (userIds.length > 0) {
-      createAndSendNotification(userIds, {
-        title: 'New Live Session Scheduled!',
-        message: `A new live session "${liveClass.title}" is scheduled for ${liveClass.date} at ${liveClass.time}.`,
-        type: 'live_class',
-        link: `/student/dashboard?tab=live`
-      }, true);
+      dispatcher.sendLiveClassScheduled(
+        userIds, 
+        liveClass.course || '', 
+        liveClass.course ? 'Enrolled Course' : 'Dr. Sam Reefath Radiology Academy', 
+        liveClass.title, 
+        `${liveClass.date} at ${liveClass.time}`
+      ).catch(err => console.error('Background email dispatch failed:', err));
     }
 
     if (global.io) {
@@ -93,32 +95,46 @@ exports.updateLiveClass = async (req, res) => {
     }
     
     const oldStatus = liveClass.status;
+    const oldDate = liveClass.date;
+    const oldTime = liveClass.time;
 
     liveClass = await LiveClass.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
     });
     
-    // Notify users if the class just went live
-    if (oldStatus !== 'Live Now' && liveClass.status === 'Live Now') {
-      let userIds = [];
-      if (liveClass.accessControl === 'all') {
-        const allUsers = await User.find({ role: 'student' }).select('_id');
-        userIds = allUsers.map(u => u._id);
-      } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents && liveClass.selectedStudents.length > 0) {
-        userIds = liveClass.selectedStudents;
-      } else if (liveClass.course) {
-        const enrolledUsers = await User.find({ 'enrolledCourses.course': liveClass.course }).select('_id');
-        userIds = enrolledUsers.map(u => u._id);
-      }
+    // Build user list for notifications
+    let userIds = [];
+    if (liveClass.accessControl === 'all') {
+      const allUsers = await User.find({ role: 'student' }).select('_id');
+      userIds = allUsers.map(u => u._id);
+    } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents && liveClass.selectedStudents.length > 0) {
+      userIds = liveClass.selectedStudents;
+    } else if (liveClass.course) {
+      const enrolledUsers = await User.find({ 'enrolledCourses.course': liveClass.course }).select('_id');
+      userIds = enrolledUsers.map(u => u._id);
+    }
 
-      if (userIds.length > 0) {
-        createAndSendNotification(userIds, {
-          title: 'Live Session Started!',
-          message: `The live session "${liveClass.title}" has just started. Join now!`,
-          type: 'live_class_started',
-          link: `/student/dashboard?tab=live`
-        }, true);
+    if (userIds.length > 0) {
+      // 1. Notify if rescheduled
+      if ((oldDate !== liveClass.date || oldTime !== liveClass.time) && liveClass.status !== 'Live Now') {
+        dispatcher.sendLiveClassRescheduled(
+          userIds,
+          liveClass.course || '',
+          liveClass.title,
+          `${liveClass.date} at ${liveClass.time}`
+        ).catch(err => console.error('Background email dispatch failed:', err));
+      }
+      
+      // 2. Notify if the class just went live
+      if (oldStatus !== 'Live Now' && liveClass.status === 'Live Now') {
+        // We can reuse the "Starting Soon" or a custom one. Dispatcher has sendLiveClassReminder.
+        dispatcher.sendLiveClassReminder(
+          userIds,
+          liveClass.course || '',
+          liveClass.title,
+          'RIGHT NOW'
+        ).catch(err => console.error('Background email dispatch failed:', err));
       }
     }
 

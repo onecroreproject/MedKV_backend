@@ -24,7 +24,7 @@ const generateHTMLTemplate = (title, bodyHtml, ctaText = null, ctaLink = null) =
     <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
       <!-- Header -->
       <div style="background-color: #0B1F4D; padding: 30px 20px; text-align: center; border-bottom: 4px solid #D4AF37;">
-        <img src="cid:academy_logo" alt="Dr. Sam Reefath Radiology Academy" style="max-height: 70px; width: auto;" />
+        <img src="https://drsamreefathradiologyacademy.com/logo.png" alt="Dr. Sam Reefath Radiology Academy" style="max-height: 70px; width: auto;" />
       </div>
       
       <!-- Body -->
@@ -57,21 +57,15 @@ const sendEmail = async (options) => {
     transporterConfig.service = 'gmail';
   } else {
     transporterConfig.host = process.env.SMTP_HOST || 'sandbox.smtp.mailtrap.io';
-    transporterConfig.port = process.env.SMTP_PORT || 2525;
+    transporterConfig.port = parseInt(process.env.SMTP_PORT) || 2525;
+    transporterConfig.secure = transporterConfig.port === 465;
   }
 
   const transporter = nodemailer.createTransport(transporterConfig);
 
   const attachments = options.attachments || [];
   
-  // Attach the logo for CID referencing if HTML is used
-  if (options.html) {
-    attachments.push({
-      filename: 'company_name_transparent.png',
-      path: path.resolve(__dirname, '../../../adminpanel/src/assets/logos/company_name_transparent.png'),
-      cid: 'academy_logo'
-    });
-  }
+  // Attachments are passed directly if needed (e.g. PDFs)
 
   const message = {
     from: `${process.env.FROM_NAME || 'Dr. Sam Reefath Radiology Academy'} <${process.env.FROM_EMAIL || 'info@reefathradiology.com'}>`,

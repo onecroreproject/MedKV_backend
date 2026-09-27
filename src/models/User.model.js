@@ -63,6 +63,7 @@ const userSchema = new mongoose.Schema({
       lastActive: { type: Date, default: Date.now }
     }
   ],
+  activeToken: { type: String },
   enrolledCourses: [
     {
       course: { type: mongoose.Schema.ObjectId, ref: 'Course' },
