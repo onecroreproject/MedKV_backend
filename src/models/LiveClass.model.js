@@ -91,6 +91,14 @@ const liveClassSchema = new mongoose.Schema({
   selectedStudents: [{
     type: mongoose.Schema.ObjectId,
     ref: 'User'
+  }],
+  logs: [{
+    timestamp: { type: Date, default: Date.now },
+    userId: { type: String },
+    userName: { type: String },
+    role: { type: String },
+    action: { type: String },
+    details: { type: mongoose.Schema.Types.Mixed }
   }]
 }, {
   timestamps: true,

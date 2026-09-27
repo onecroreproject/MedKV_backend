@@ -4,7 +4,8 @@ const {
   getLiveClass,
   createLiveClass,
   updateLiveClass,
-  deleteLiveClass
+  deleteLiveClass,
+  logLiveClassEvent
 } = require('../controllers/liveClass.controller');
 const { 
   createLiveKitToken,
@@ -28,6 +29,9 @@ router.route('/:id')
   .get(getLiveClass)
   .put(protect, authorize('Admin', 'Faculty'), updateLiveClass)
   .delete(protect, authorize('Admin'), deleteLiveClass);
+
+router.route('/:id/log')
+  .post(protect, logLiveClassEvent);
 
 // LiveKit Token Route
 router.route('/token/livekit')

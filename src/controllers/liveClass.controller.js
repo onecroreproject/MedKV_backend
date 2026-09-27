@@ -169,3 +169,20 @@ exports.deleteLiveClass = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+// @desc    Log a diagnostic event for a live class
+// @route   POST /api/v1/live-classes/:id/log
+// @access  Private
+exports.logLiveClassEvent = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, details, userId, userName, role } = req.body;
+    await LiveClass.findByIdAndUpdate(id, {
+      $push: { logs: { action, details, userId, userName, role } }
+    });
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('Error saving live class log:', err);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
