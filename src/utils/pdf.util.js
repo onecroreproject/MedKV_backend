@@ -15,38 +15,31 @@ exports.generateReceiptPDF = (paymentData) => {
       const primaryColor = '#333333';
       const secondaryColor = '#666666';
       
-      // -- Header Box (No blue background, just clean borders or lines if needed)
+      // -- Header Box
+      // Left Column Background (Dark Blue)
+      doc.rect(30, 30, 350, 80).fill('#0B1F4D');
+
       // Top Border
       doc.rect(30, 30, 535, 80).stroke('#cccccc');
 
       // Logo Left
       const logoPath = path.join(__dirname, '../assets/dark_logo_transparent.png');
       try {
-        doc.image(logoPath, 40, 45, { height: 45 });
+        doc.image(logoPath, 40, 35, { height: 70 });
       } catch (err) {
-        doc.fillColor(primaryColor).fontSize(20).text('Academy Logo', 40, 50);
+        doc.fillColor('#ffffff').fontSize(20).text('Academy Logo', 40, 50);
       }
 
       // Company Name Logo Next to Logo
       const companyNamePath = path.join(__dirname, '../assets/company_name_transparent.png');
       try {
-        doc.image(companyNamePath, 100, 58, { height: 18 });
+        doc.image(companyNamePath, 125, 45, { height: 45 });
       } catch (err) {
-        doc.fillColor(primaryColor).fontSize(10).font('Helvetica-Bold').text('Dr. Sam Reefath Radiology Academy', 100, 60);
+        doc.fillColor('#ffffff').fontSize(14).font('Helvetica-Bold').text('Dr. Sam Reefath Radiology Academy', 125, 60);
       }
       
-      doc.moveTo(270, 30).lineTo(270, 110).stroke('#cccccc');
-
-      // Academy Info Middle
-      doc.font('Helvetica').fontSize(9).fillColor(primaryColor).text('Academic Head Office', 280, 45);
-      doc.text('123 Medical Avenue, Ground Floor', 280, 58);
-      doc.text('London, UK W1G 0BJ', 280, 71);
-      doc.text('United Kingdom', 280, 84);
-
-      doc.moveTo(420, 30).lineTo(420, 110).stroke('#cccccc');
-
       // TAX INVOICE Right
-      doc.fillColor('#666666').fontSize(20).text('TAX INVOICE', 430, 65);
+      doc.fillColor('#666666').fontSize(20).text('TAX INVOICE', 410, 65);
 
       // -- Meta Info Block
       doc.rect(30, 110, 535, 75).stroke('#cccccc');
@@ -121,41 +114,51 @@ exports.generateReceiptPDF = (paymentData) => {
       doc.text('Amount', 480, 298, { width: 75, align: 'right' });
 
       // -- Table Content Row
-      doc.rect(30, 315, 535, 50).stroke('#cccccc');
-      doc.moveTo(60, 315).lineTo(60, 365).stroke('#cccccc');
-      doc.moveTo(350, 315).lineTo(350, 365).stroke('#cccccc');
-      doc.moveTo(410, 315).lineTo(410, 365).stroke('#cccccc');
-      doc.moveTo(480, 315).lineTo(480, 365).stroke('#cccccc');
-
+      const tableY = 315;
       const courseName = paymentData.courseName || 'Medical Course';
       const baseAmtStr = `${paymentData.currency} ${paymentData.baseAmount || paymentData.amount}`;
       const totalAmtStr = `${paymentData.currency} ${paymentData.amount}`;
+      const subtitle = `Full Curriculum Access + Live Webinars (${formattedDuration})`;
 
-      doc.font('Helvetica').text('1', 30, 325, { width: 30, align: 'center' });
-      doc.font('Helvetica-Bold').text(courseName, 70, 325);
-      doc.font('Helvetica').fillColor(secondaryColor).text(`Full Curriculum Access + Live Webinars (${formattedDuration})`, 70, 340);
-      doc.fillColor(primaryColor).text('1.00', 350, 325, { width: 60, align: 'center' });
-      doc.text(baseAmtStr, 410, 325, { width: 70, align: 'right' });
-      doc.text(baseAmtStr, 480, 325, { width: 75, align: 'right' });
+      doc.font('Helvetica-Bold');
+      const titleHeight = doc.heightOfString(courseName, { width: 270 });
+      doc.font('Helvetica');
+      const subtitleHeight = doc.heightOfString(subtitle, { width: 270 });
+      
+      const rowHeight = Math.max(50, titleHeight + subtitleHeight + 20);
+
+      doc.rect(30, tableY, 535, rowHeight).stroke('#cccccc');
+      doc.moveTo(60, tableY).lineTo(60, tableY + rowHeight).stroke('#cccccc');
+      doc.moveTo(350, tableY).lineTo(350, tableY + rowHeight).stroke('#cccccc');
+      doc.moveTo(410, tableY).lineTo(410, tableY + rowHeight).stroke('#cccccc');
+      doc.moveTo(480, tableY).lineTo(480, tableY + rowHeight).stroke('#cccccc');
+
+      doc.font('Helvetica').text('1', 30, tableY + 10, { width: 30, align: 'center' });
+      doc.font('Helvetica-Bold').text(courseName, 70, tableY + 10, { width: 270 });
+      doc.font('Helvetica').fillColor(secondaryColor).text(subtitle, 70, doc.y + 2, { width: 270 });
+      doc.fillColor(primaryColor).text('1.00', 350, tableY + 10, { width: 60, align: 'center' });
+      doc.text(baseAmtStr, 410, tableY + 10, { width: 70, align: 'right' });
+      doc.text(baseAmtStr, 480, tableY + 10, { width: 75, align: 'right' });
 
       // -- Footer Totals Area
-      doc.rect(30, 365, 535, 150).stroke('#cccccc');
-      doc.moveTo(350, 365).lineTo(350, 515).stroke('#cccccc');
+      const footerY = tableY + rowHeight;
+      doc.rect(30, footerY, 535, 150).stroke('#cccccc');
+      doc.moveTo(350, footerY).lineTo(350, footerY + 150).stroke('#cccccc');
 
       // Left footer
-      doc.font('Helvetica').fillColor(secondaryColor).text('Total In Words', 40, 375);
-      doc.font('Helvetica-Bold').fillColor(primaryColor).text(`Amount Paid in ${paymentData.currency} Only`, 40, 390);
+      doc.font('Helvetica').fillColor(secondaryColor).text('Total In Words', 40, footerY + 10);
+      doc.font('Helvetica-Bold').fillColor(primaryColor).text(`Amount Paid in ${paymentData.currency} Only`, 40, footerY + 25);
 
-      doc.font('Helvetica-Bold').fillColor(secondaryColor).text('Notes', 40, 420);
-      doc.font('Helvetica').fillColor(primaryColor).text('Thanks for choosing Dr. Sam Reefath Radiology Academy.', 40, 435);
+      doc.font('Helvetica-Bold').fillColor(secondaryColor).text('Notes', 40, footerY + 55);
+      doc.font('Helvetica').fillColor(primaryColor).text('Thanks for choosing Dr. Sam Reefath Radiology Academy.', 40, footerY + 70);
 
       // Right footer totals
-      doc.moveTo(350, 395).lineTo(565, 395).stroke('#cccccc');
+      doc.moveTo(350, footerY + 30).lineTo(565, footerY + 30).stroke('#cccccc');
       
-      doc.font('Helvetica-Bold').text('Course Fee', 360, 377);
-      doc.text(baseAmtStr, 480, 377, { width: 75, align: 'right' });
+      doc.font('Helvetica-Bold').text('Course Fee', 360, footerY + 12);
+      doc.text(baseAmtStr, 480, footerY + 12, { width: 75, align: 'right' });
 
-      let yOffset = 405;
+      let yOffset = footerY + 40;
       if (paymentData.paymentProcessingFee > 0) {
         doc.font('Helvetica').text('Processing Fee', 360, yOffset);
         doc.text(`${paymentData.currency} ${paymentData.paymentProcessingFee}`, 480, yOffset, { width: 75, align: 'right' });
@@ -178,18 +181,17 @@ exports.generateReceiptPDF = (paymentData) => {
       doc.text(`${paymentData.currency} 0.00`, 480, yOffset + 25, { width: 75, align: 'right' });
 
       // Signature area
-      doc.font('Helvetica-Bold').fontSize(10).text('Dr. Sam Reefath Academy', 350, 470, { width: 215, align: 'center' });
-      
-      doc.moveTo(380, 495).lineTo(535, 495).stroke('#cccccc');
-      doc.font('Helvetica').fontSize(8).fillColor(secondaryColor).text('Authorized Signature', 350, 500, { width: 215, align: 'center' });
+      const sigY = yOffset + 60;
+      doc.font('Helvetica-Bold').fontSize(10).text('Dr. Sam Reefath Academy', 350, sigY, { width: 215, align: 'center' });
 
       // -- Bottom Terms
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(secondaryColor).text('Account Details:-', 30, 530);
-      doc.font('Helvetica').fillColor(primaryColor).text('Payment securely processed via Razorpay Gateway.', 30, 545);
-      doc.text(`Transaction ID - ${paymentData.razorpayPaymentId || 'N/A'}`, 30, 560);
+      const bottomTermsY = footerY + 165;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(secondaryColor).text('Account Details:-', 30, bottomTermsY);
+      doc.font('Helvetica').fillColor(primaryColor).text('Payment securely processed via Razorpay Gateway.', 30, bottomTermsY + 15);
+      doc.text(`Transaction ID - ${paymentData.razorpayPaymentId || 'N/A'}`, 30, bottomTermsY + 30);
 
-      doc.font('Helvetica-Bold').fillColor(secondaryColor).text('Terms & Conditions', 30, 585);
-      doc.font('Helvetica').fillColor(primaryColor).text('Access is valid for 12 months from the date of enrollment. Fees are non-transferable.', 30, 600);
+      doc.font('Helvetica-Bold').fillColor(secondaryColor).text('Terms & Conditions', 30, bottomTermsY + 55);
+      doc.font('Helvetica').fillColor(primaryColor).text('Access is valid for 12 months from the date of enrollment. Fees are non-transferable.', 30, bottomTermsY + 70);
 
       // -- Bottom Declaration
       doc.font('Helvetica-Bold').fontSize(8).fillColor(secondaryColor).text('Declaration', 30, 750);

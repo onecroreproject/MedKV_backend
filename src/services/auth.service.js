@@ -6,6 +6,10 @@ const UAParser = require('ua-parser-js');
 exports.registerUser = async (userData, requiredRole) => {
   const { name, email, password, phoneNumber } = userData;
   
+  if (!phoneNumber) {
+    throw new Error('Mobile number is required for registration');
+  }
+
   const role = requiredRole;
 
   const userExists = await User.findOne({ email });
