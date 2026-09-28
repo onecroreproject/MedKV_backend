@@ -87,3 +87,28 @@ exports.sendMessageToStudent = async (req, res) => {
     });
   }
 };
+
+// @desc    Delete student
+// @route   DELETE /api/v1/students/:id
+// @access  Private (Admin)
+exports.deleteStudent = async (req, res) => {
+  try {
+    const student = await User.findById(req.params.id);
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    
+    if (student.role !== 'Student') {
+      return res.status(400).json({ success: false, message: 'User is not a student' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+
+    res.status(200).json({ success: true, message: 'Student deleted successfully' });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Server Error',
+    });
+  }
+};
