@@ -252,7 +252,7 @@ exports.stopRecording = async (req, res) => {
     await recording.save();
 
     // Trigger merge just in case all segments already fired webhook
-    triggerMergeIfReady(recording._id);
+    await triggerMergeIfReady(recording._id);
 
     res.status(200).json({ success: true, data: recording });
   } catch (error) {
@@ -298,7 +298,7 @@ exports.getRecordingStatus = async (req, res) => {
         if (updated) {
           await recording.save();
           if (recording.recordingState === 'processing') {
-            triggerMergeIfReady(recording._id);
+            await triggerMergeIfReady(recording._id);
           }
         }
       } catch (err) {
