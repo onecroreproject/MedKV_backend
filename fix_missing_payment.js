@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
+require('dotenv').config();
 
-mongoose.connect('mongodb://localhost:27017/mediacalkv').then(async () => {
+const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/mediacalkv';
+mongoose.connect(mongoUri).then(async () => {
   const User = require('./src/models/User.model');
   const Course = require('./src/models/Course.model');
   const Payment = require('./src/models/Payment.model');
