@@ -13,6 +13,28 @@ const egressClient = new EgressClient(
   process.env.LIVEKIT_API_SECRET
 );
 
+const normalizeEgressStatus = (status) => {
+  const statusMap = {
+    0: 'EGRESS_STARTING',
+    1: 'EGRESS_ACTIVE',
+    2: 'EGRESS_ENDING',
+    3: 'EGRESS_COMPLETE',
+    4: 'EGRESS_FAILED',
+    5: 'EGRESS_ABORTED',
+    6: 'EGRESS_LIMIT_REACHED',
+  };
+
+  if (typeof status === 'number') {
+    return statusMap[status] || `EGRESS_UNKNOWN_${status}`;
+  }
+
+  if (typeof status === 'string' && /^\d+$/.test(status)) {
+    return statusMap[Number(status)] || `EGRESS_UNKNOWN_${status}`;
+  }
+
+  return status;
+};
+
 // Helper to trigger merge
 const triggerMergeIfReady = async (recordingId) => {
   try {
@@ -255,18 +277,21 @@ exports.getRecordingStatus = async (req, res) => {
         const activeEgresses = await egressClient.listEgress({ roomName });
         for (const egressInfo of activeEgresses) {
           const seg = recording.segments.find(s => s.egressId === egressInfo.egressId);
-          if (seg && seg.status !== egressInfo.status) {
-            seg.status = egressInfo.status;
-            updated = true;
-            if (egressInfo.status === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
-              const fileResult = egressInfo.fileResults[0];
-              // LiveKit returns the container path (e.g. /out/recordings/filename.mp4), so extract basename
-              const actualFileName = path.basename(fileResult.filename);
-              seg.fileName = actualFileName;
-              seg.filePath = path.join(EGRESS_DIR, actualFileName);
-              seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
-              seg.fileSize = fileResult.size;
-              seg.endedAt = new Date();
+          if (seg) {
+            const normalizedStatus = normalizeEgressStatus(egressInfo.status);
+            if (seg.status !== normalizedStatus) {
+              seg.status = normalizedStatus;
+              updated = true;
+              if (normalizedStatus === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
+                const fileResult = egressInfo.fileResults[0];
+                // LiveKit returns the container path (e.g. /out/recordings/filename.mp4), so extract basename
+                const actualFileName = path.basename(fileResult.filename);
+                seg.fileName = actualFileName;
+                seg.filePath = path.join(EGRESS_DIR, actualFileName);
+                seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
+                seg.fileSize = fileResult.size;
+                seg.endedAt = new Date();
+              }
             }
           }
         }
@@ -341,7 +366,7 @@ exports.livekitWebhook = async (req, res) => {
       if (recording) {
         const seg = recording.segments.find(s => s.egressId === egressId);
         if (seg) {
-          seg.status = egressInfo.status || 'EGRESS_ACTIVE';
+          seg.status = normalizeEgressStatus(egressInfo.status || 'EGRESS_ACTIVE');
           await recording.save();
         }
       }
@@ -372,7 +397,8 @@ exports.livekitWebhook = async (req, res) => {
       if (recording) {
         const seg = recording.segments.find(s => s.egressId === egressId);
         if (seg) {
-          seg.status = egressInfo.status || 'EGRESS_COMPLETE';
+          const normalizedStatus = normalizeEgressStatus(egressInfo.status || 'EGRESS_COMPLETE');
+          seg.status = normalizedStatus;
           seg.endedAt = new Date();
           seg.fileName = fileName;
           seg.filePath = filePath;
@@ -417,17 +443,20 @@ exports.getRecordings = async (req, res) => {
           const activeEgresses = await egressClient.listEgress({ roomName: rec.roomName });
           for (const egressInfo of activeEgresses) {
             const seg = rec.segments.find(s => s.egressId === egressInfo.egressId);
-            if (seg && seg.status !== egressInfo.status) {
-              seg.status = egressInfo.status;
-              updated = true;
-              if (egressInfo.status === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
-                const fileResult = egressInfo.fileResults[0];
-                const actualFileName = path.basename(fileResult.filename);
-                seg.fileName = actualFileName;
-                seg.filePath = path.join(EGRESS_DIR, actualFileName);
-                seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
-                seg.fileSize = fileResult.size;
-                seg.endedAt = new Date();
+            if (seg) {
+              const normalizedStatus = normalizeEgressStatus(egressInfo.status);
+              if (seg.status !== normalizedStatus) {
+                seg.status = normalizedStatus;
+                updated = true;
+                if (normalizedStatus === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
+                  const fileResult = egressInfo.fileResults[0];
+                  const actualFileName = path.basename(fileResult.filename);
+                  seg.fileName = actualFileName;
+                  seg.filePath = path.join(EGRESS_DIR, actualFileName);
+                  seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
+                  seg.fileSize = fileResult.size;
+                  seg.endedAt = new Date();
+                }
               }
             }
           }
