@@ -124,8 +124,11 @@ exports.startRecording = async (req, res) => {
         course: courseId,
         teacher: teacherId,
         title,
-        startedAt: new Date()
+        startedAt: new Date(),
+        egressId: info.egressId
       });
+    } else if (!recording.egressId) {
+      recording.egressId = info.egressId;
     }
 
     recording.recordingState = 'recording';

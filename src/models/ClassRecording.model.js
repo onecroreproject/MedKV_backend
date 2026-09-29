@@ -29,6 +29,11 @@ const classRecordingSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  egressId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   activeEgressId: {
     type: String,
   },
