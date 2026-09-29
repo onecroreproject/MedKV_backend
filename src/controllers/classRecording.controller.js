@@ -2,195 +2,263 @@ const fs = require('fs');
 const path = require('path');
 const ClassRecording = require('../models/ClassRecording.model');
 const LiveClass = require('../models/LiveClass.model');
+const { EgressClient, EncodedFileOutput, EncodedFileType } = require('livekit-server-sdk');
+const { mergeSegments } = require('../utils/ffmpegMerge');
 
-// The path where LiveKit saves egress recordings
 const EGRESS_DIR = '/opt/livekit/egress/recordings/';
 
-// @desc    Get all class recordings
-// @route   GET /api/v1/class-recordings
-// @access  Private (Admin)
-exports.getRecordings = async (req, res) => {
+const egressClient = new EgressClient(
+  process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com', // Should ideally use HTTP/WS internal URL if possible, or public
+  process.env.LIVEKIT_API_KEY,
+  process.env.LIVEKIT_API_SECRET
+);
+
+// Helper to trigger merge
+const triggerMergeIfReady = async (recordingId) => {
   try {
-    const { search, course, status } = req.query;
-    let query = {};
-    
-    if (search) {
-      query.title = { $regex: search, $options: 'i' };
-    }
-    if (course) {
-      query.course = course;
-    }
-    if (status) {
-      query.status = status;
-    }
+    const recording = await ClassRecording.findById(recordingId);
+    if (!recording || recording.recordingState !== 'processing') return;
 
-    const recordings = await ClassRecording.find(query)
-      .populate('course', 'title')
-      .populate('teacher', 'name email')
-      .sort({ createdAt: -1 });
+    // Check if all segments are complete
+    const allComplete = recording.segments.every(s => 
+      s.status === 'EGRESS_COMPLETE' || s.status === 'EGRESS_FAILED' || s.status === 'EGRESS_ABORTED' || s.status === 'EGRESS_LIMIT_REACHED'
+    );
 
-    res.status(200).json({ success: true, count: recordings.length, data: recordings });
-  } catch (error) {
-    console.error('Error fetching class recordings:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// @desc    Get single recording metadata
-// @route   GET /api/v1/class-recordings/:id
-// @access  Private (Admin)
-exports.getRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id)
-      .populate('course', 'title')
-      .populate('teacher', 'name email');
+    if (allComplete) {
+      const successfulSegments = recording.segments.filter(s => s.status === 'EGRESS_COMPLETE' && s.filePath && fs.existsSync(s.filePath));
       
-    if (!recording) {
-      return res.status(404).json({ success: false, message: 'Recording not found' });
-    }
-    
-    res.status(200).json({ success: true, data: recording });
-  } catch (error) {
-    console.error('Error fetching recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// @desc    Update recording details
-// @route   PUT /api/v1/class-recordings/:id
-// @access  Private (Admin)
-exports.updateRecording = async (req, res) => {
-  try {
-    const { title, description, course } = req.body;
-    
-    let recording = await ClassRecording.findById(req.params.id);
-    if (!recording) {
-      return res.status(404).json({ success: false, message: 'Recording not found' });
-    }
-    
-    recording = await ClassRecording.findByIdAndUpdate(req.params.id, {
-      title,
-      description,
-      course
-    }, { new: true, runValidators: true });
-    
-    res.status(200).json({ success: true, data: recording });
-  } catch (error) {
-    console.error('Error updating recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// @desc    Delete recording (DB & Disk)
-// @route   DELETE /api/v1/class-recordings/:id
-// @access  Private (Admin)
-exports.deleteRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording) {
-      return res.status(404).json({ success: false, message: 'Recording not found' });
-    }
-    
-    // Attempt to delete from disk
-    if (recording.filePath) {
-      const fullPath = path.resolve(recording.filePath);
-      // Ensure path traversal doesn't happen
-      if (fullPath.startsWith(path.resolve(EGRESS_DIR))) {
-        if (fs.existsSync(fullPath)) {
-          fs.unlinkSync(fullPath);
-        }
-      }
-    }
-    
-    await recording.deleteOne();
-    res.status(200).json({ success: true, data: {} });
-  } catch (error) {
-    console.error('Error deleting recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-// @desc    Stream video file
-// @route   GET /api/v1/class-recordings/:id/stream
-// @access  Private (Admin)
-exports.streamRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) {
-      return res.status(404).json({ success: false, message: 'Recording not found' });
-    }
-    
-    const fullPath = path.resolve(recording.filePath);
-    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) {
-      return res.status(403).json({ success: false, message: 'Invalid path' });
-    }
-    
-    if (!fs.existsSync(fullPath)) {
-      return res.status(404).json({ success: false, message: 'Video file not found on disk' });
-    }
-    
-    const stat = fs.statSync(fullPath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-    
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      
-      if (start >= fileSize) {
-        res.status(416).send('Requested range not satisfiable\n' + start + ' >= ' + fileSize);
+      if (successfulSegments.length === 0) {
+        recording.recordingState = 'failed';
+        recording.errorMessage = 'All segments failed or files missing';
+        await recording.save();
         return;
       }
-      
-      const chunksize = (end - start) + 1;
-      const file = fs.createReadStream(fullPath, { start, end });
-      const head = {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'video/mp4',
-      };
-      
-      res.writeHead(206, head);
-      file.pipe(res);
-    } else {
-      const head = {
-        'Content-Length': fileSize,
-        'Content-Type': 'video/mp4',
-      };
-      res.writeHead(200, head);
-      fs.createReadStream(fullPath).pipe(res);
+
+      const pathsToMerge = successfulSegments.map(s => s.filePath);
+      const safeCourseName = (recording.title || 'recording').replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const finalFileName = `${safeCourseName}_Merged_${timestamp}_${Date.now()}.mp4`;
+      const finalOutputPath = path.join(EGRESS_DIR, finalFileName);
+
+      try {
+        await mergeSegments(pathsToMerge, finalOutputPath);
+        
+        let totalDuration = 0;
+        let totalSize = 0;
+        successfulSegments.forEach(s => {
+          totalDuration += (s.duration || 0);
+          totalSize += (s.fileSize || 0);
+        });
+
+        // If file was merged successfully, we can get actual size from disk
+        if (fs.existsSync(finalOutputPath)) {
+          const stat = fs.statSync(finalOutputPath);
+          totalSize = stat.size;
+        }
+
+        recording.recordingState = 'completed';
+        recording.fileName = finalFileName;
+        recording.filePath = finalOutputPath;
+        recording.duration = totalDuration;
+        recording.fileSize = totalSize;
+        recording.endedAt = new Date();
+        await recording.save();
+
+        // Optional: Cleanup individual segment files
+        for (const segPath of pathsToMerge) {
+          try { if (fs.existsSync(segPath)) fs.unlinkSync(segPath); } catch(e) {}
+        }
+      } catch (mergeError) {
+        console.error('Merge failed:', mergeError);
+        recording.recordingState = 'failed';
+        recording.errorMessage = 'Merge failed: ' + mergeError.message;
+        await recording.save();
+      }
     }
-  } catch (error) {
-    console.error('Error streaming recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+  } catch(error) {
+    console.error('triggerMergeIfReady error', error);
   }
 };
 
-// @desc    Download video file
-// @route   GET /api/v1/class-recordings/:id/download
-// @access  Private (Admin)
-exports.downloadRecording = async (req, res) => {
+// @desc    Start Recording
+// @route   POST /api/v1/class-recordings/start
+// @access  Private (Teacher/Admin)
+exports.startRecording = async (req, res) => {
   try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) {
-      return res.status(404).json({ success: false, message: 'Recording not found' });
-    }
+    const { roomName } = req.body;
+    if (!roomName) return res.status(400).json({ success: false, message: 'roomName is required' });
+
+    let recording = await ClassRecording.findOne({ roomName, recordingState: { $in: ['idle', 'recording', 'paused', 'processing'] } });
     
-    const fullPath = path.resolve(recording.filePath);
-    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) {
-      return res.status(403).json({ success: false, message: 'Invalid path' });
+    if (recording && recording.recordingState !== 'idle') {
+      return res.status(400).json({ success: false, message: `Recording already in state: ${recording.recordingState}` });
     }
+
+    const fileOutput = new EncodedFileOutput({
+      fileType: EncodedFileType.MP4,
+      filepath: `class_${roomName}_{time}.mp4`
+    });
+
+    const info = await egressClient.startRoomCompositeEgress(roomName, {
+      file: fileOutput,
+      layout: 'grid'
+    }, {
+      videoOnly: false,
+      audioOnly: false
+    });
+
+    let courseId = null;
+    let teacherId = null;
+    let title = `Recording for ${roomName}`;
     
-    if (!fs.existsSync(fullPath)) {
-      return res.status(404).json({ success: false, message: 'Video file not found on disk' });
+    const liveClass = await LiveClass.findById(roomName).catch(() => null);
+    if (liveClass) {
+      courseId = liveClass.course;
+      teacherId = liveClass.faculty;
+      title = liveClass.title || title;
     }
-    
-    res.download(fullPath, recording.fileName || 'recording.mp4');
+
+    if (!recording) {
+      recording = new ClassRecording({
+        roomName,
+        course: courseId,
+        teacher: teacherId,
+        title,
+        startedAt: new Date()
+      });
+    }
+
+    recording.recordingState = 'recording';
+    recording.activeEgressId = info.egressId;
+    recording.segments.push({
+      egressId: info.egressId,
+      status: 'EGRESS_STARTING',
+      startedAt: new Date()
+    });
+
+    await recording.save();
+    res.status(200).json({ success: true, data: recording });
   } catch (error) {
-    console.error('Error downloading recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    console.error('startRecording error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Pause Recording
+// @route   POST /api/v1/class-recordings/pause
+// @access  Private (Teacher/Admin)
+exports.pauseRecording = async (req, res) => {
+  try {
+    const { roomName } = req.body;
+    const recording = await ClassRecording.findOne({ roomName, recordingState: 'recording' });
+    
+    if (!recording) return res.status(400).json({ success: false, message: 'No active recording found to pause.' });
+
+    if (recording.activeEgressId) {
+      await egressClient.stopEgress(recording.activeEgressId).catch(err => console.error('Egress stop error', err));
+      recording.activeEgressId = null;
+    }
+
+    recording.recordingState = 'paused';
+    await recording.save();
+
+    res.status(200).json({ success: true, data: recording });
+  } catch (error) {
+    console.error('pauseRecording error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Resume Recording
+// @route   POST /api/v1/class-recordings/resume
+// @access  Private (Teacher/Admin)
+exports.resumeRecording = async (req, res) => {
+  try {
+    const { roomName } = req.body;
+    const recording = await ClassRecording.findOne({ roomName, recordingState: 'paused' });
+    
+    if (!recording) return res.status(400).json({ success: false, message: 'No paused recording found to resume.' });
+
+    const fileOutput = new EncodedFileOutput({
+      fileType: EncodedFileType.MP4,
+      filepath: `class_${roomName}_resumed_{time}.mp4`
+    });
+
+    const info = await egressClient.startRoomCompositeEgress(roomName, {
+      file: fileOutput,
+      layout: 'grid'
+    }, {
+      videoOnly: false,
+      audioOnly: false
+    });
+
+    recording.recordingState = 'recording';
+    recording.activeEgressId = info.egressId;
+    recording.segments.push({
+      egressId: info.egressId,
+      status: 'EGRESS_STARTING',
+      startedAt: new Date()
+    });
+
+    await recording.save();
+    res.status(200).json({ success: true, data: recording });
+  } catch (error) {
+    console.error('resumeRecording error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Stop Recording (Finalize)
+// @route   POST /api/v1/class-recordings/stop
+// @access  Private (Teacher/Admin)
+exports.stopRecording = async (req, res) => {
+  try {
+    const { roomName } = req.body;
+    const recording = await ClassRecording.findOne({ roomName, recordingState: { $in: ['recording', 'paused'] } });
+    
+    if (!recording) return res.status(400).json({ success: false, message: 'No active recording found to stop.' });
+
+    if (recording.activeEgressId && recording.recordingState === 'recording') {
+      await egressClient.stopEgress(recording.activeEgressId).catch(err => console.error('Egress stop error', err));
+      recording.activeEgressId = null;
+    }
+
+    recording.recordingState = 'processing';
+    await recording.save();
+
+    // Trigger merge just in case all segments already fired webhook
+    triggerMergeIfReady(recording._id);
+
+    res.status(200).json({ success: true, data: recording });
+  } catch (error) {
+    console.error('stopRecording error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get Recording Status
+// @route   GET /api/v1/class-recordings/status/:roomName
+// @access  Private (Teacher/Admin)
+exports.getRecordingStatus = async (req, res) => {
+  try {
+    const { roomName } = req.params;
+    const recording = await ClassRecording.findOne({ roomName }).sort({ createdAt: -1 });
+    if (!recording) return res.status(200).json({ success: true, data: { recordingState: 'idle' } });
+    
+    // Calculate accumulated duration from completed segments
+    let accumulatedDuration = 0;
+    recording.segments.forEach(s => {
+      if (s.duration) accumulatedDuration += s.duration;
+    });
+
+    res.status(200).json({ success: true, data: { 
+      recordingState: recording.recordingState,
+      accumulatedDuration,
+      startedAt: recording.startedAt
+    }});
+  } catch (error) {
+    console.error('getRecordingStatus error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -205,20 +273,24 @@ exports.livekitWebhook = async (req, res) => {
       process.env.LIVEKIT_API_SECRET
     );
     
-    // LiveKit sends webhook payload in body and auth token in Authorization header
-    const body = req.body; // Can be string or buffer. Express json middleware might have parsed it.
-    // WebhookReceiver expects raw body string and auth header for signature validation
-    
-    // To properly use WebhookReceiver with Express, we need raw body, but assuming it's bypassed or handled:
-    // Let's just process the egress event if it exists for simplicity if signature verification is tricky with parsed JSON.
-    // Actually, LiveKit webhook sends an 'event' object
-    
     let event;
     try {
-       event = receiver.receive(req.rawBody || JSON.stringify(req.body), req.get('Authorization'));
+       let bodyString = req.body;
+       if (Buffer.isBuffer(req.body)) {
+         bodyString = req.body.toString('utf8');
+       } else if (req.rawBody) {
+         bodyString = req.rawBody;
+       } else if (typeof req.body === 'object') {
+         bodyString = JSON.stringify(req.body);
+       }
+       event = receiver.receive(bodyString, req.get('Authorization'));
     } catch (e) {
        console.warn('Webhook signature validation failed or missing. Attempting direct parse.', e.message);
-       event = req.body;
+       try {
+         event = typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? req.body : JSON.parse(req.body.toString('utf8') || '{}');
+       } catch(err) {
+         event = null;
+       }
     }
     
     if (!event) return res.status(400).send('No event');
@@ -228,36 +300,20 @@ exports.livekitWebhook = async (req, res) => {
       if (!egressInfo) return res.status(200).send();
       
       const egressId = egressInfo.egressId;
-      const roomName = egressInfo.roomName;
-      let courseId = null;
-      let teacherId = null;
-      let title = `Recording for ${roomName}`;
+      const recording = await ClassRecording.findOne({ 'segments.egressId': egressId });
       
-      // Try to find the associated LiveClass to get course & teacher
-      const liveClass = await LiveClass.findById(roomName).catch(() => null);
-      if (liveClass) {
-        courseId = liveClass.course;
-        teacherId = liveClass.faculty;
-        title = liveClass.title || title;
+      if (recording) {
+        const seg = recording.segments.find(s => s.egressId === egressId);
+        if (seg) {
+          seg.status = egressInfo.status || 'EGRESS_ACTIVE';
+          await recording.save();
+        }
       }
-      
-      await ClassRecording.create({
-        egressId,
-        roomName,
-        course: courseId,
-        teacher: teacherId,
-        title,
-        status: egressInfo.status || 'EGRESS_STARTING',
-        startedAt: new Date(),
-      });
-      
     } else if (event.event === 'egress_ended') {
       const egressInfo = event.egressInfo;
       if (!egressInfo) return res.status(200).send();
       
       const egressId = egressInfo.egressId;
-      
-      // EgressInfo contains file details if successful
       const fileResults = egressInfo.fileResults;
       let filePath = '';
       let fileName = '';
@@ -266,33 +322,166 @@ exports.livekitWebhook = async (req, res) => {
       
       if (fileResults && fileResults.length > 0) {
         const fileResult = fileResults[0];
-        // fileResult.filename might be the relative path or absolute path depending on egress config
         fileName = fileResult.filename;
         filePath = path.join(EGRESS_DIR, fileName); 
-        duration = fileResult.duration; // in ns or whatever LiveKit returns, usually nanoseconds for Egress
+        duration = fileResult.duration; 
         if (duration) {
-           duration = Math.floor(duration / 1000000000); // convert to seconds
+           duration = Math.floor(duration / 1000000000); 
         }
         fileSize = fileResult.size;
       }
       
-      await ClassRecording.findOneAndUpdate(
-        { egressId },
-        {
-          status: egressInfo.status || 'EGRESS_COMPLETE',
-          endedAt: new Date(),
-          fileName,
-          filePath,
-          duration,
-          fileSize
-        },
-        { new: true, upsert: true }
-      );
+      const recording = await ClassRecording.findOne({ 'segments.egressId': egressId });
+      if (recording) {
+        const seg = recording.segments.find(s => s.egressId === egressId);
+        if (seg) {
+          seg.status = egressInfo.status || 'EGRESS_COMPLETE';
+          seg.endedAt = new Date();
+          seg.fileName = fileName;
+          seg.filePath = filePath;
+          seg.duration = duration;
+          seg.fileSize = fileSize;
+          await recording.save();
+        }
+        
+        // Check if we need to merge
+        if (recording.recordingState === 'processing') {
+          triggerMergeIfReady(recording._id);
+        }
+      }
     }
     
     res.status(200).send('OK');
   } catch (error) {
     console.error('Error processing egress webhook:', error);
     res.status(500).send('Server Error');
+  }
+};
+
+// ... keep existing getRecordings, getRecording, updateRecording, deleteRecording, streamRecording, downloadRecording
+exports.getRecordings = async (req, res) => {
+  try {
+    const { search, course, status } = req.query;
+    let query = {};
+    if (search) query.title = { $regex: search, $options: 'i' };
+    if (course) query.course = course;
+    if (status) query.recordingState = status;
+
+    const recordings = await ClassRecording.find(query)
+      .populate('course', 'title')
+      .populate('teacher', 'name email')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ success: true, count: recordings.length, data: recordings });
+  } catch (error) {
+    console.error('Error fetching class recordings:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+exports.getRecording = async (req, res) => {
+  try {
+    const recording = await ClassRecording.findById(req.params.id)
+      .populate('course', 'title')
+      .populate('teacher', 'name email');
+    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
+    res.status(200).json({ success: true, data: recording });
+  } catch (error) {
+    console.error('Error fetching recording:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+exports.updateRecording = async (req, res) => {
+  try {
+    const { title, description, course } = req.body;
+    const recording = await ClassRecording.findByIdAndUpdate(req.params.id, { title, description, course }, { new: true, runValidators: true });
+    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
+    res.status(200).json({ success: true, data: recording });
+  } catch (error) {
+    console.error('Error updating recording:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+exports.deleteRecording = async (req, res) => {
+  try {
+    const recording = await ClassRecording.findById(req.params.id);
+    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
+    
+    // delete merged file
+    if (recording.filePath) {
+      const fullPath = path.resolve(recording.filePath);
+      if (fullPath.startsWith(path.resolve(EGRESS_DIR)) && fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+      }
+    }
+    // delete segments
+    if (recording.segments) {
+      recording.segments.forEach(s => {
+        if (s.filePath) {
+          const segPath = path.resolve(s.filePath);
+          if (segPath.startsWith(path.resolve(EGRESS_DIR)) && fs.existsSync(segPath)) {
+             try { fs.unlinkSync(segPath); } catch(e) {}
+          }
+        }
+      });
+    }
+    
+    await recording.deleteOne();
+    res.status(200).json({ success: true, data: {} });
+  } catch (error) {
+    console.error('Error deleting recording:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+exports.streamRecording = async (req, res) => {
+  try {
+    const recording = await ClassRecording.findById(req.params.id);
+    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
+    
+    const fullPath = path.resolve(recording.filePath);
+    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
+    if (!fs.existsSync(fullPath)) return res.status(404).json({ success: false, message: 'Video file not found on disk' });
+    
+    const stat = fs.statSync(fullPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+    
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      if (start >= fileSize) return res.status(416).send('Requested range not satisfiable');
+      const chunksize = (end - start) + 1;
+      const file = fs.createReadStream(fullPath, { start, end });
+      const head = { 'Content-Range': `bytes ${start}-${end}/${fileSize}`, 'Accept-Ranges': 'bytes', 'Content-Length': chunksize, 'Content-Type': 'video/mp4' };
+      res.writeHead(206, head);
+      file.pipe(res);
+    } else {
+      const head = { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' };
+      res.writeHead(200, head);
+      fs.createReadStream(fullPath).pipe(res);
+    }
+  } catch (error) {
+    console.error('Error streaming recording:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+exports.downloadRecording = async (req, res) => {
+  try {
+    const recording = await ClassRecording.findById(req.params.id);
+    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
+    
+    const fullPath = path.resolve(recording.filePath);
+    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
+    if (!fs.existsSync(fullPath)) return res.status(404).json({ success: false, message: 'Video file not found on disk' });
+    
+    res.download(fullPath, recording.fileName || 'recording.mp4');
+  } catch (error) {
+    console.error('Error downloading recording:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
