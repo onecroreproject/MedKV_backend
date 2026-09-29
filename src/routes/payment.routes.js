@@ -1,10 +1,13 @@
 const express = require('express');
-const { createOrder, verifyPayment, getAllPayments, downloadReceipt, resendReceipt, downloadSampleReceipt } = require('../controllers/payment.controller');
+const { createOrder, verifyPayment, getAllPayments, downloadReceipt, resendReceipt, downloadSampleReceipt, razorpayWebhook } = require('../controllers/payment.controller');
 const { protect, authorize } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-router.use(protect); // Ensure all payment routes require authentication
+// Webhook Route (MUST be public, no protect middleware)
+router.post('/webhook', razorpayWebhook);
+
+router.use(protect); // Ensure all payment routes below require authentication
 
 // Student Routes
 router.post('/create-order', authorize('Student', 'Admin'), createOrder);

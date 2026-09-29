@@ -45,7 +45,10 @@ exports.getStudentById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
 
-    const payments = await Payment.find({ student: req.params.id }).populate('course', 'title');
+    const payments = await Payment.find({ student: req.params.id })
+      .populate('course', 'title')
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.status(200).json({
       success: true,

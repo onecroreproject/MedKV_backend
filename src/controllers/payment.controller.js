@@ -62,6 +62,10 @@ exports.createOrder = async (req, res) => {
       currency: 'INR',
       // Razorpay receipt max 40 chars
       receipt: `rcpt_${Date.now()}`,
+      notes: {
+        courseId: course._id.toString(),
+        userId: req.user.id.toString()
+      }
     };
 
     const order = await razorpay.orders.create(options);
@@ -440,5 +444,104 @@ exports.resendReceipt = async (req, res) => {
   } catch (error) {
     console.error("Resend Receipt Error:", error);
     res.status(500).json({ success: false, message: 'Failed to resend receipt email' });
+  }
+};
+
+// @desc    Razorpay Webhook to capture drop-off payments
+// @route   POST /api/v1/payment/webhook
+// @access  Public
+exports.razorpayWebhook = async (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!secret) {
+      console.error('Webhook Secret is not configured.');
+      return res.status(500).send('Webhook secret not configured');
+    }
+
+    const signature = req.headers['x-razorpay-signature'];
+    if (!signature) {
+      return res.status(400).send('No signature provided');
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+
+    if (expectedSignature !== signature) {
+      return res.status(400).send('Invalid signature');
+    }
+
+    const event = req.body.event;
+    if (event === 'payment.captured' || event === 'order.paid') {
+      let entity = req.body.payload.payment ? req.body.payload.payment.entity : null;
+      if (event === 'order.paid') {
+        entity = req.body.payload.order.entity;
+      }
+      
+      if (!entity) return res.status(200).send('Entity not found in payload');
+
+      const notes = entity.notes;
+      if (!notes || !notes.userId || !notes.courseId) {
+        console.warn('Webhook received but missing notes (userId or courseId). Cannot automatically enroll.');
+        return res.status(200).send('Missing notes');
+      }
+
+      const { userId, courseId } = notes;
+      const razorpay_order_id = entity.order_id || entity.id; // entity.id is order_id for order.paid
+      // for payment.captured, payment_id is entity.id
+      const razorpay_payment_id = event === 'payment.captured' ? entity.id : 'webhook_order_paid';
+
+      // Check if already processed by frontend /verify
+      const existingPayment = await Payment.findOne({ razorpayOrderId: razorpay_order_id });
+      if (existingPayment) {
+        return res.status(200).send('Payment already processed by verify API');
+      }
+
+      const course = await findCourseByIdOrSlug(courseId);
+      if (!course) return res.status(200).send('Course not found');
+
+      const totalPayable = entity.amount ? entity.amount / 100 : 0;
+
+      // Save transaction
+      await Payment.create({
+        student: userId,
+        course: course._id,
+        amount: totalPayable,
+        currency: entity.currency || 'INR',
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        type: 'Enrollment',
+        status: 'Success'
+      });
+
+      let validUntil = null;
+      if (course.duration && course.duration !== 'lifetime') {
+        const days = parseInt(course.duration, 10);
+        if (!isNaN(days)) {
+          validUntil = new Date();
+          validUntil.setDate(validUntil.getDate() + days);
+        }
+      }
+
+      // Enroll User
+      const user = await User.findOneAndUpdate(
+        { _id: userId, 'enrolledCourses.course': { $ne: course._id } },
+        { $push: { enrolledCourses: { course: course._id, progress: 0, validUntil } } },
+        { new: true }
+      );
+
+      if (user) {
+        await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: 1 } });
+        console.log(`[Webhook] User ${userId} successfully enrolled in ${courseId}`);
+      }
+
+      return res.status(200).send('Webhook processed successfully');
+    }
+
+    return res.status(200).send('Event not handled');
+  } catch (error) {
+    console.error("Razorpay Webhook Error:", error);
+    res.status(500).send('Webhook processing error');
   }
 };
