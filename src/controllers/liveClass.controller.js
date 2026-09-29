@@ -55,7 +55,7 @@ exports.createLiveClass = async (req, res) => {
     // Notify users based on access control
     let userIds = [];
     if (liveClass.accessControl === 'all') {
-      const allUsers = await User.find({ role: 'student' }).select('_id');
+      const allUsers = await User.find({ role: { $regex: /^student$/i } }).select('_id');
       userIds = allUsers.map(u => u._id);
     } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents && liveClass.selectedStudents.length > 0) {
       userIds = liveClass.selectedStudents;
@@ -106,7 +106,7 @@ exports.updateLiveClass = async (req, res) => {
     // Build user list for notifications
     let userIds = [];
     if (liveClass.accessControl === 'all') {
-      const allUsers = await User.find({ role: 'student' }).select('_id');
+      const allUsers = await User.find({ role: { $regex: /^student$/i } }).select('_id');
       userIds = allUsers.map(u => u._id);
     } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents && liveClass.selectedStudents.length > 0) {
       userIds = liveClass.selectedStudents;
