@@ -288,8 +288,8 @@ exports.getRecordingStatus = async (req, res) => {
                 const actualFileName = path.basename(fileResult.filename);
                 seg.fileName = actualFileName;
                 seg.filePath = path.join(EGRESS_DIR, actualFileName);
-                seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
-                seg.fileSize = fileResult.size;
+                seg.duration = fileResult.duration ? Math.floor(Number(fileResult.duration) / 1000000000) : 0;
+                seg.fileSize = Number(fileResult.size);
                 seg.endedAt = new Date();
               }
             }
@@ -348,7 +348,7 @@ exports.livekitWebhook = async (req, res) => {
        } else if (typeof req.body === 'object') {
          bodyString = JSON.stringify(req.body);
        }
-       event = receiver.receive(bodyString, req.get('Authorization'));
+       event = await receiver.receive(bodyString, req.get('Authorization'));
     } catch (e) {
        console.warn('Webhook signature validation failed or missing. Attempting direct parse.', e.message);
        try {
@@ -392,9 +392,9 @@ exports.livekitWebhook = async (req, res) => {
         filePath = path.join(EGRESS_DIR, actualFileName); 
         duration = fileResult.duration; 
         if (duration) {
-           duration = Math.floor(duration / 1000000000); 
+           duration = Math.floor(Number(duration) / 1000000000); 
         }
-        fileSize = fileResult.size;
+        fileSize = Number(fileResult.size);
       }
       
       const recording = await ClassRecording.findOne({ 'segments.egressId': egressId });
@@ -413,7 +413,7 @@ exports.livekitWebhook = async (req, res) => {
         
         // Check if we need to merge
         if (recording.recordingState === 'processing') {
-          triggerMergeIfReady(recording._id);
+          await triggerMergeIfReady(recording._id);
         }
       }
     }
@@ -457,8 +457,8 @@ exports.getRecordings = async (req, res) => {
                   const actualFileName = path.basename(fileResult.filename);
                   seg.fileName = actualFileName;
                   seg.filePath = path.join(EGRESS_DIR, actualFileName);
-                  seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
-                  seg.fileSize = fileResult.size;
+                  seg.duration = fileResult.duration ? Math.floor(Number(fileResult.duration) / 1000000000) : 0;
+                  seg.fileSize = Number(fileResult.size);
                   seg.endedAt = new Date();
                 }
               }
