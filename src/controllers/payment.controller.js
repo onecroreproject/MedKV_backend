@@ -201,6 +201,32 @@ exports.verifyPayment = async (req, res) => {
         } catch (err) {
           console.error('Failed to push enrollment to Google Sheets:', err.message);
         }
+        
+        // Notify about upcoming live classes for this course
+        try {
+          const LiveClass = require('../models/LiveClass.model');
+          const upcomingClasses = await LiveClass.find({
+            status: 'Scheduled',
+            date: { $gte: new Date() },
+            $or: [
+              { accessControl: 'all' },
+              { accessControl: 'course', course: course._id }
+            ]
+          });
+          const dispatcher = require('../services/notificationDispatcher');
+          for (const lc of upcomingClasses) {
+            dispatcher.sendLiveClassScheduled(
+              [user._id],
+              lc.course || '',
+              lc.course ? course.title : 'Dr. Sam Reefath Radiology Academy',
+              lc.title,
+              `${lc.date.toLocaleDateString()} at ${lc.time}`
+            ).catch(err => console.error('Live class email failed:', err));
+          }
+        } catch (err) {
+          console.error('Failed to send live class emails on enrollment:', err);
+        }
+
       }
     } else {
       // User was already enrolled
@@ -534,6 +560,31 @@ exports.razorpayWebhook = async (req, res) => {
       if (user) {
         await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: 1 } });
         console.log(`[Webhook] User ${userId} successfully enrolled in ${courseId}`);
+
+        // Notify about upcoming live classes
+        try {
+          const LiveClass = require('../models/LiveClass.model');
+          const upcomingClasses = await LiveClass.find({
+            status: 'Scheduled',
+            date: { $gte: new Date() },
+            $or: [
+              { accessControl: 'all' },
+              { accessControl: 'course', course: course._id }
+            ]
+          });
+          const dispatcher = require('../services/notificationDispatcher');
+          for (const lc of upcomingClasses) {
+            dispatcher.sendLiveClassScheduled(
+              [user._id],
+              lc.course || '',
+              lc.course ? course.title : 'Dr. Sam Reefath Radiology Academy',
+              lc.title,
+              `${lc.date.toLocaleDateString()} at ${lc.time}`
+            ).catch(err => console.error('Live class email failed:', err));
+          }
+        } catch (err) {
+          console.error('Failed to send live class emails on webhook:', err);
+        }
       }
 
       return res.status(200).send('Webhook processed successfully');

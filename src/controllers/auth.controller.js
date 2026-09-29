@@ -70,7 +70,36 @@ exports.validateResetToken = async (req, res) => {
 
 // --- STUDENT AUTH ---
 exports.registerStudent = async (req, res) => {
-  try { await sendAuthResponse(await authService.registerUser(req.body, 'Student'), 201, res); } 
+  try { 
+    const user = await authService.registerUser(req.body, 'Student');
+    
+    // Check for upcoming 'all' access live classes the user just gained access to
+    try {
+      const LiveClass = require('../models/LiveClass.model');
+      const upcomingClasses = await LiveClass.find({
+        status: 'Scheduled',
+        date: { $gte: new Date() },
+        accessControl: 'all'
+      });
+
+      if (upcomingClasses.length > 0) {
+        const dispatcher = require('../services/notificationDispatcher');
+        for (const lc of upcomingClasses) {
+          dispatcher.sendLiveClassScheduled(
+            [user._id],
+            '',
+            'Dr. Sam Reefath Radiology Academy',
+            lc.title,
+            `${lc.date.toLocaleDateString()} at ${lc.time}`
+          ).catch(err => console.error('Upcoming live class notification failed:', err));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to send live class emails on registration:', err);
+    }
+
+    await sendAuthResponse(user, 201, res); 
+  } 
   catch (error) { res.status(400).json({ success: false, message: error.message }); }
 };
 
