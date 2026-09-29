@@ -80,7 +80,7 @@ exports.generateReceiptPDF = (paymentData) => {
       // Format duration
       const durationRaw = paymentData.courseDuration || '365';
       let formattedDuration = '1 Year';
-      if (durationRaw === 'lifetime' || durationRaw.toLowerCase() === 'lifetime') {
+      if (String(durationRaw).toLowerCase() === 'lifetime') {
         formattedDuration = 'Lifetime Access';
       } else if (!isNaN(Number(durationRaw))) {
         const days = Number(durationRaw);

@@ -250,7 +250,7 @@ exports.verifyPayment = async (req, res) => {
         html,
         attachments: [
           {
-            filename: `${userDoc.name.replace(/\s+/g, '_')}_Receipt_${razorpay_payment_id}.pdf`,
+            filename: `${userDoc.name.replace(/[^a-zA-Z0-9]/g, '_')}_Receipt_${razorpay_payment_id}.pdf`,
             content: pdfBuffer,
             contentType: 'application/pdf'
           }
@@ -364,7 +364,7 @@ exports.downloadReceipt = async (req, res) => {
 
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${payment.student.name.replace(/\s+/g, '_')}_Receipt_${payment.razorpayPaymentId}.pdf"`,
+      'Content-Disposition': `attachment; filename="${payment.student.name.replace(/[^a-zA-Z0-9]/g, '_')}_Receipt_${payment.razorpayPaymentId}.pdf"`,
       'Content-Length': pdfBuffer.length
     });
 
@@ -433,7 +433,7 @@ exports.resendReceipt = async (req, res) => {
       html,
       attachments: [
         {
-          filename: `Receipt_${payment.razorpayPaymentId}.pdf`,
+          filename: `${payment.student.name.replace(/[^a-zA-Z0-9]/g, '_')}_Receipt_${payment.razorpayPaymentId}.pdf`,
           content: pdfBuffer,
           contentType: 'application/pdf'
         }
