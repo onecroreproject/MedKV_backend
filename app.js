@@ -47,7 +47,12 @@ const authLoginLimiter = rateLimit({
 });
 
 app.use(compression());
-app.use(express.json({ limit: '500mb' }));
+app.use(express.json({ 
+  limit: '500mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 // Static file serving for uploads
@@ -62,6 +67,7 @@ const categoryRoutes = require('./src/routes/category.routes');
 const enrollmentRoutes = require('./src/routes/enrollment.routes');
 const liveClassRoutes = require('./src/routes/liveClass.routes');
 const recordingRoutes = require('./src/routes/recording.routes');
+const classRecordingRoutes = require('./src/routes/classRecording.routes');
 const attendanceRoutes = require('./src/routes/attendance.routes');
 const enquiryRoutes = require('./src/routes/enquiry.routes');
 const webrtcRoutes = require('./src/routes/webrtc.routes');
@@ -76,6 +82,7 @@ app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/enroll', enrollmentRoutes);
 app.use('/api/v1/live-classes', liveClassRoutes);
 app.use('/api/v1/recordings', recordingRoutes);
+app.use('/api/v1/class-recordings', classRecordingRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/enquiries', enquiryRoutes);
 app.use('/api/v1/webrtc', webrtcRoutes);
