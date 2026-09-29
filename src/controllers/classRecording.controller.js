@@ -309,7 +309,11 @@ exports.getRecordingStatus = async (req, res) => {
     // Recalculate duration
     let accumulatedDuration = 0;
     recording.segments.forEach(s => {
-      if (s.duration) accumulatedDuration += s.duration;
+      if (s.duration) {
+        accumulatedDuration += s.duration;
+      } else if (s.startedAt && (recording.recordingState === 'recording' || s.status === 'EGRESS_ACTIVE' || s.status === 'EGRESS_STARTING')) {
+        accumulatedDuration += Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000);
+      }
     });
 
     res.status(200).json({ success: true, data: { 
