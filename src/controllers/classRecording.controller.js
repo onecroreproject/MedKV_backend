@@ -96,7 +96,7 @@ exports.startRecording = async (req, res) => {
 
     const fileOutput = new EncodedFileOutput({
       fileType: EncodedFileType.MP4,
-      filepath: `class_${roomName}_{time}.mp4`
+      filepath: `/out/recordings/class_${roomName}_{time}.mp4`
     });
 
     const info = await egressClient.startRoomCompositeEgress(roomName, {
@@ -181,7 +181,7 @@ exports.resumeRecording = async (req, res) => {
 
     const fileOutput = new EncodedFileOutput({
       fileType: EncodedFileType.MP4,
-      filepath: `class_${roomName}_resumed_{time}.mp4`
+      filepath: `/out/recordings/class_${roomName}_resumed_{time}.mp4`
     });
 
     const info = await egressClient.startRoomCompositeEgress(roomName, {
@@ -245,7 +245,40 @@ exports.getRecordingStatus = async (req, res) => {
     const recording = await ClassRecording.findOne({ roomName }).sort({ createdAt: -1 });
     if (!recording) return res.status(200).json({ success: true, data: { recordingState: 'idle' } });
     
-    // Calculate accumulated duration from completed segments
+    // Active Fallback Check if webhooks are failing/delayed
+    let updated = false;
+    if (recording.recordingState === 'processing' || recording.recordingState === 'recording' || recording.recordingState === 'paused') {
+      try {
+        const activeEgresses = await egressClient.listEgress({ roomName });
+        for (const egressInfo of activeEgresses) {
+          const seg = recording.segments.find(s => s.egressId === egressInfo.egressId);
+          if (seg && seg.status !== egressInfo.status) {
+            seg.status = egressInfo.status;
+            updated = true;
+            if (egressInfo.status === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
+              const fileResult = egressInfo.fileResults[0];
+              // LiveKit returns the container path (e.g. /out/recordings/filename.mp4), so extract basename
+              const actualFileName = path.basename(fileResult.filename);
+              seg.fileName = actualFileName;
+              seg.filePath = path.join(EGRESS_DIR, actualFileName);
+              seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
+              seg.fileSize = fileResult.size;
+              seg.endedAt = new Date();
+            }
+          }
+        }
+        if (updated) {
+          await recording.save();
+          if (recording.recordingState === 'processing') {
+            triggerMergeIfReady(recording._id);
+          }
+        }
+      } catch (err) {
+        console.error('Fallback egress check error:', err);
+      }
+    }
+
+    // Recalculate duration
     let accumulatedDuration = 0;
     recording.segments.forEach(s => {
       if (s.duration) accumulatedDuration += s.duration;
@@ -322,8 +355,9 @@ exports.livekitWebhook = async (req, res) => {
       
       if (fileResults && fileResults.length > 0) {
         const fileResult = fileResults[0];
-        fileName = fileResult.filename;
-        filePath = path.join(EGRESS_DIR, fileName); 
+        const actualFileName = path.basename(fileResult.filename);
+        fileName = actualFileName;
+        filePath = path.join(EGRESS_DIR, actualFileName); 
         duration = fileResult.duration; 
         if (duration) {
            duration = Math.floor(duration / 1000000000); 
@@ -367,7 +401,43 @@ exports.getRecordings = async (req, res) => {
     if (course) query.course = course;
     if (status) query.recordingState = status;
 
-    const recordings = await ClassRecording.find(query)
+    let recordings = await ClassRecording.find(query)
+      .populate('course', 'title')
+      .populate('teacher', 'name email')
+      .sort({ createdAt: -1 });
+
+    // Active Fallback for processing recordings when viewing the list
+    for (const rec of recordings) {
+      if (rec.recordingState === 'processing') {
+        let updated = false;
+        try {
+          const activeEgresses = await egressClient.listEgress({ roomName: rec.roomName });
+          for (const egressInfo of activeEgresses) {
+            const seg = rec.segments.find(s => s.egressId === egressInfo.egressId);
+            if (seg && seg.status !== egressInfo.status) {
+              seg.status = egressInfo.status;
+              updated = true;
+              if (egressInfo.status === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
+                const fileResult = egressInfo.fileResults[0];
+                const actualFileName = path.basename(fileResult.filename);
+                seg.fileName = actualFileName;
+                seg.filePath = path.join(EGRESS_DIR, actualFileName);
+                seg.duration = fileResult.duration ? Math.floor(fileResult.duration / 1000000000) : 0;
+                seg.fileSize = fileResult.size;
+                seg.endedAt = new Date();
+              }
+            }
+          }
+          if (updated) {
+            await rec.save();
+            await triggerMergeIfReady(rec._id);
+          }
+        } catch(e) {}
+      }
+    }
+    
+    // Refetch in case anything merged
+    recordings = await ClassRecording.find(query)
       .populate('course', 'title')
       .populate('teacher', 'name email')
       .sort({ createdAt: -1 });
