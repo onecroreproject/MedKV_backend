@@ -122,9 +122,10 @@ exports.startRecording = async (req, res) => {
     });
 
     const info = await egressClient.startRoomCompositeEgress(roomName, {
-      file: fileOutput,
-      layout: 'grid'
+      file: fileOutput
     }, {
+      layout: 'grid',
+      customBaseUrl: 'https://recording.drsamreefathradiologyacademy.com',
       videoOnly: false,
       audioOnly: false
     });
@@ -210,9 +211,10 @@ exports.resumeRecording = async (req, res) => {
     });
 
     const info = await egressClient.startRoomCompositeEgress(roomName, {
-      file: fileOutput,
-      layout: 'grid'
+      file: fileOutput
     }, {
+      layout: 'grid',
+      customBaseUrl: 'https://recording.drsamreefathradiologyacademy.com',
       videoOnly: false,
       audioOnly: false
     });
