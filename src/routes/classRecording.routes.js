@@ -25,7 +25,10 @@ router.post('/webhook', express.raw({ type: 'application/webhook+json' }), livek
 router.use(protect);
 
 // Recording control endpoints (Teacher/Admin)
-router.post('/start', authorize('Admin', 'Faculty'), startRecording);
+router.post('/start', authorize('Admin', 'Faculty'), (req, res, next) => {
+  console.log('[Recording][Route] START endpoint reached');
+  next();
+}, startRecording);
 router.post('/pause', authorize('Admin', 'Faculty'), pauseRecording);
 router.post('/resume', authorize('Admin', 'Faculty'), resumeRecording);
 router.post('/stop', authorize('Admin', 'Faculty'), stopRecording);

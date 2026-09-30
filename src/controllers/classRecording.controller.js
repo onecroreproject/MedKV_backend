@@ -654,9 +654,16 @@ exports.livekitWebhook = async (req, res) => {
     if (!event) return res.status(400).send('No event');
 
     console.log('[Recording][Webhook] Event:', event.event);
-    console.log('[Recording][Webhook] Egress ID:', event.egressInfo?.egressId);
-    console.log('[Recording][Webhook] Room:', event.egressInfo?.roomName);
-    console.log('[Recording][Webhook] Status:', event.egressInfo?.status);
+    
+    if (event.egressInfo) {
+      console.log('[Recording][Webhook] Egress ID:', event.egressInfo.egressId);
+      console.log('[Recording][Webhook] Room:', event.egressInfo.roomName);
+      console.log('[Recording][Webhook] Status:', event.egressInfo.status);
+    } else if (event.room) {
+      console.log('[Recording][Webhook] Room event for:', event.room.name);
+    } else {
+      console.log('[Recording][Webhook] Non-Egress LiveKit event:', event.event);
+    }
 
     if (event.event === 'egress_started') {
       console.log('[Recording][Webhook] EGRESS_STARTED');
