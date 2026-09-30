@@ -121,7 +121,7 @@ exports.startRecording = async (req, res) => {
       return res.status(404).json({ success: false, message: 'LiveClass not found' });
     }
 
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
 
@@ -211,7 +211,7 @@ exports.pauseRecording = async (req, res) => {
 
     const liveClass = await LiveClass.findById(roomName);
     if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
 
@@ -243,7 +243,7 @@ exports.resumeRecording = async (req, res) => {
 
     const liveClass = await LiveClass.findById(roomName);
     if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
 
@@ -290,7 +290,7 @@ exports.stopRecording = async (req, res) => {
 
     const liveClass = await LiveClass.findById(roomName);
     if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
 
