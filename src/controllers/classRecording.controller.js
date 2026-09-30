@@ -106,6 +106,12 @@ const triggerMergeIfReady = async (recordingId) => {
 // @route   POST /api/v1/class-recordings/start
 // @access  Private (Teacher/Admin)
 exports.startRecording = async (req, res) => {
+  console.log('========================================');
+  console.log('START RECORDING API CALLED');
+  console.log('Body:', req.body);
+  console.log('User:', req.user);
+  console.log('========================================');
+
   try {
     const { roomName } = req.body;
     if (!roomName) return res.status(400).json({ success: false, message: 'roomName is required' });
