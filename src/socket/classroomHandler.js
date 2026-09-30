@@ -117,8 +117,10 @@ module.exports = (io, socket) => {
 
   // ── Join classroom socket room ──────────────────────────────────────────────
   socket.on('class:room-join', async ({ roomId }) => {
+    console.log(`[SOCKET] class:room-join received userId=${uid} role=${role} roomId=${roomId}`);
     await validateAndExecute(roomId, async () => {
       socket.join(roomId);
+      console.log(`[SOCKET] socket joined room=${roomId}`);
       socket.classroomRoomId = roomId;
       socket.classroomUserId = uid;
 

@@ -43,8 +43,8 @@ module.exports = (io, socket) => {
       const studentData = { userId: uid, name, socketId: socket.id, role };
       await addStudentToWaitingRoom(roomId, studentData);
 
-      console.log(`[Admission] join-request received roomId: ${roomId} userId: ${uid}`);
-      console.log(`[Admission] waiting state stored`);
+      console.log(`[ADMISSION] class:join-request received userId=${uid} roomId=${roomId} role=${role}`);
+      console.log(`[ADMISSION] waiting state stored key=waiting-room:${roomId}:${uid} userId=${uid} roomId=${roomId}`);
 
       socket.waitingRoomId  = roomId;
       socket.waitingUserId  = uid;
@@ -53,8 +53,10 @@ module.exports = (io, socket) => {
       socket.emit('class:waiting-room-joined');
 
       // Notify faculty
+      const roomClients = io.sockets.adapter.rooms.get(roomId);
+      const socketCount = roomClients ? roomClients.size : 0;
       io.to(roomId).emit('class:waiting-student', studentData);
-      console.log(`[Admission] waiting student event emitted roomId: ${roomId}`);
+      console.log(`[ADMISSION] emitting class:waiting-student roomId=${roomId} socket count in room=${socketCount}`);
     } catch (err) {
       console.error('[Admission] join-request error:', err.message);
       socket.emit('class:rejected', { message: 'Server error during admission' });
@@ -65,11 +67,13 @@ module.exports = (io, socket) => {
   socket.on('class:get-waiting-students', async (payload) => {
     try {
       const { roomId } = payload;
+      console.log(`[ADMISSION] class:get-waiting-students received userId=${uid} role=${role} roomId=${roomId}`);
       const validation = await validateClassAccess(uid, role, roomId);
       
       if (!validation.valid || !validation.isTeacher) return;
 
       const waitingStudents = await getWaitingStudents(roomId);
+      console.log(`[ADMISSION] waiting students fetched count=${waitingStudents.length} students=${waitingStudents.map(s => s.name).join(', ')}`);
       socket.emit('class:waiting-students-list', waitingStudents);
     } catch (err) {
       console.error('[Admission] get-waiting-students error:', err.message);
