@@ -3,6 +3,35 @@ const User = require('../models/User.model');
 const { createAndSendNotification } = require('../utils/notification.util');
 const dispatcher = require('../services/notificationDispatcher');
 
+const generateGCalLink = (liveClass) => {
+  try {
+    const d = new Date(liveClass.date);
+    let hours = 0;
+    let mins = 0;
+    const timeParts = liveClass.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (timeParts) {
+      hours = parseInt(timeParts[1], 10);
+      mins = parseInt(timeParts[2], 10);
+      if (timeParts[3] && timeParts[3].toUpperCase() === 'PM' && hours < 12) hours += 12;
+      if (timeParts[3] && timeParts[3].toUpperCase() === 'AM' && hours === 12) hours = 0;
+    }
+    
+    d.setHours(hours, mins, 0, 0);
+    const endD = new Date(d.getTime() + (liveClass.duration || 60) * 60000);
+    
+    const formatDate = (date) => date.toISOString().replace(/-|:|\.\d\d\d/g,"");
+    
+    const text = encodeURIComponent(liveClass.title || 'Live Class');
+    const dates = `${formatDate(d)}/${formatDate(endD)}`;
+    const detailsEncoded = encodeURIComponent('Join the live class from your student portal.');
+    const locationEncoded = encodeURIComponent('Online');
+    
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${text}&dates=${dates}&details=${detailsEncoded}&location=${locationEncoded}`;
+  } catch (e) {
+    return '';
+  }
+};
+
 // @desc    Get all live classes
 // @route   GET /api/v1/live-classes
 // @access  Public (or semi-public depending on auth)
@@ -70,7 +99,8 @@ exports.createLiveClass = async (req, res) => {
         liveClass.course || '', 
         liveClass.course ? 'Enrolled Course' : 'Dr. Sam Reefath Radiology Academy', 
         liveClass.title, 
-        `${liveClass.date} at ${liveClass.time}`
+        `${new Date(liveClass.date).toLocaleDateString()} at ${liveClass.time}`,
+        generateGCalLink(liveClass)
       ).catch(err => console.error('Background email dispatch failed:', err));
     }
 
@@ -122,7 +152,8 @@ exports.updateLiveClass = async (req, res) => {
           userIds,
           liveClass.course || '',
           liveClass.title,
-          `${liveClass.date} at ${liveClass.time}`
+          `${new Date(liveClass.date).toLocaleDateString()} at ${liveClass.time}`,
+          generateGCalLink(liveClass)
         ).catch(err => console.error('Background email dispatch failed:', err));
       }
       

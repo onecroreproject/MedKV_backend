@@ -389,14 +389,19 @@ exports.livekitWebhook = async (req, res) => {
       
       if (fileResults && fileResults.length > 0) {
         const fileResult = fileResults[0];
+
         const actualFileName = path.basename(fileResult.filename);
+
         fileName = actualFileName;
-        filePath = path.join(EGRESS_DIR, actualFileName); 
-        duration = fileResult.duration; 
-        if (duration) {
-           duration = Math.floor(Number(duration) / 1000000000); 
-        }
-        fileSize = Number(fileResult.size);
+        filePath = path.join(EGRESS_DIR, actualFileName);
+
+        duration = fileResult.duration != null
+          ? Math.floor(Number(fileResult.duration) / 1000000000)
+          : 0;
+
+        fileSize = fileResult.size != null
+          ? Number(fileResult.size)
+          : 0;
       }
       
       const recording = await ClassRecording.findOne({ 'segments.egressId': egressId });

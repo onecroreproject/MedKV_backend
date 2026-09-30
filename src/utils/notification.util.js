@@ -43,6 +43,13 @@ const createAndSendNotification = async (userIds, notificationData, sendEmailFla
             <p>Hi <strong>${user.name}</strong>,</p>
             <div style="background-color: #f9fafb; padding: 20px; border-left: 4px solid #0B1F4D; margin: 25px 0;">
               <p style="margin: 0; font-size: 16px;">${notificationData.message}</p>
+              ${notificationData.calendarLink ? `
+                <div style="margin-top: 20px;">
+                  <a href="${notificationData.calendarLink}" style="background-color: #fff; border: 1px solid #dcdcdc; color: #333; padding: 10px 18px; text-decoration: none; border-radius: 4px; display: inline-block; font-size: 14px; font-weight: bold;">
+                    📅 Add to Google Calendar
+                  </a>
+                </div>
+              ` : ''}
             </div>
             ${!notificationData.link ? '<p>Best regards,<br/><strong>Dr. Sam Reefath Radiology Academy</strong></p>' : ''}
           `;

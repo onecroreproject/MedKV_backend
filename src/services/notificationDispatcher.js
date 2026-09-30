@@ -123,12 +123,13 @@ exports.sendCourseContentUpdated = async (userIds, courseId, courseName) => {
 };
 
 // 12. Live Class Scheduled
-exports.sendLiveClassScheduled = async (userIds, courseId, courseName, classTitle, time) => {
+exports.sendLiveClassScheduled = async (userIds, courseId, courseName, classTitle, time, calendarLink) => {
   await createAndSendNotification(userIds, {
     title: 'New Live Class Scheduled',
-    message: `A new live class "${classTitle}" has been scheduled for "${courseName}" at ${time}. Add it to your calendar!`,
+    message: `A new live class "${classTitle}" has been scheduled for "${courseName}" at ${time}.`,
     type: 'live_class',
-    link: courseId ? `${CLIENT_URL}/student/courses/${courseId}?tab=liveclasses` : `${CLIENT_URL}/student/dashboard?tab=liveclasses`
+    link: courseId ? `${CLIENT_URL}/student/courses/${courseId}?tab=liveclasses` : `${CLIENT_URL}/student/dashboard?tab=liveclasses`,
+    calendarLink
   });
 };
 
@@ -143,12 +144,13 @@ exports.sendLiveClassReminder = async (userIds, courseId, classTitle, time) => {
 };
 
 // 14. Live Class Rescheduled
-exports.sendLiveClassRescheduled = async (userIds, courseId, classTitle, newTime) => {
+exports.sendLiveClassRescheduled = async (userIds, courseId, classTitle, newTime, calendarLink) => {
   await createAndSendNotification(userIds, {
     title: 'Live Class Rescheduled',
     message: `Please note that "${classTitle}" has been rescheduled to ${newTime}.`,
     type: 'live_class',
-    link: courseId ? `${CLIENT_URL}/student/courses/${courseId}?tab=liveclasses` : `${CLIENT_URL}/student/dashboard?tab=liveclasses`
+    link: courseId ? `${CLIENT_URL}/student/courses/${courseId}?tab=liveclasses` : `${CLIENT_URL}/student/dashboard?tab=liveclasses`,
+    calendarLink
   });
 };
 
