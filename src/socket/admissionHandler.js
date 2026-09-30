@@ -43,6 +43,9 @@ module.exports = (io, socket) => {
       const studentData = { userId: uid, name, socketId: socket.id, role };
       await addStudentToWaitingRoom(roomId, studentData);
 
+      console.log(`[Admission] join-request received roomId: ${roomId} userId: ${uid}`);
+      console.log(`[Admission] waiting state stored`);
+
       socket.waitingRoomId  = roomId;
       socket.waitingUserId  = uid;
 
@@ -51,8 +54,7 @@ module.exports = (io, socket) => {
 
       // Notify faculty
       io.to(roomId).emit('class:waiting-student', studentData);
-
-      console.log(`[Admission] join-request user=${uid} room=${roomId}`);
+      console.log(`[Admission] waiting student event emitted roomId: ${roomId}`);
     } catch (err) {
       console.error('[Admission] join-request error:', err.message);
       socket.emit('class:rejected', { message: 'Server error during admission' });
