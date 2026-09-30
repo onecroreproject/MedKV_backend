@@ -63,5 +63,41 @@ module.exports = {
   getRaisedHands,
   clearAllRaisedHands,
   checkReactionRateLimit,
-  checkChatRateLimit
+  checkChatRateLimit,
+
+  // ── Moderation state (Redis, 4h TTL) ──────────────────────────────────────
+  setModerationMute: async (roomId, userId) => {
+    const key = `moderation:mute:${roomId}:${userId}`;
+    await redisClient.set(key, '1', { EX: 4 * 3600 });
+  },
+  clearModerationMute: async (roomId, userId) => {
+    await redisClient.del(`moderation:mute:${roomId}:${userId}`);
+  },
+  isModerationMuted: async (roomId, userId) => {
+    const val = await redisClient.get(`moderation:mute:${roomId}:${userId}`);
+    return val === '1';
+  },
+
+  setModerationCameraDisabled: async (roomId, userId) => {
+    const key = `moderation:camera-disabled:${roomId}:${userId}`;
+    await redisClient.set(key, '1', { EX: 4 * 3600 });
+  },
+  clearModerationCameraDisabled: async (roomId, userId) => {
+    await redisClient.del(`moderation:camera-disabled:${roomId}:${userId}`);
+  },
+  isModerationCameraDisabled: async (roomId, userId) => {
+    const val = await redisClient.get(`moderation:camera-disabled:${roomId}:${userId}`);
+    return val === '1';
+  },
+
+  // Clean up all moderation keys for a room when class ends
+  clearRoomModerationState: async (roomId) => {
+    const pattern = `moderation:*:${roomId}:*`;
+    let cursor = 0;
+    do {
+      const result = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
+      cursor = result.cursor;
+      if (result.keys.length > 0) await redisClient.del(result.keys);
+    } while (cursor !== 0);
+  },
 };

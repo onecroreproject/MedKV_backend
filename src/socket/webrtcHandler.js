@@ -1,5 +1,6 @@
 const LiveClass = require('../models/LiveClass.model');
 const Attendance = require('../models/Attendance.model');
+const { clearRoomModerationState } = require('../services/classroom.service');
 
 // In-memory store for active rooms
 // Structure: { roomId: { teacher: socketId, students: { studentSocketId: userObj } } }
@@ -246,15 +247,12 @@ module.exports = (io, socket) => {
         try {
           const { redisClient } = require('../config/redis');
           await redisClient.del(`admitted:${socket.roomId}`);
-          
-          // Clear any remaining waiting students just in case
           const keys = await redisClient.keys(`waiting-room:${socket.roomId}:*`);
           if (keys && keys.length > 0) {
             await redisClient.del(keys);
           }
-          
-          // Clear raised hands
           await redisClient.del(`hands:${socket.roomId}`);
+          await clearRoomModerationState(socket.roomId);
         } catch (err) {
           console.error('Redis cleanup error on end class:', err);
         }
@@ -373,7 +371,10 @@ module.exports = (io, socket) => {
               await redisClient.del(keys);
             }
             await redisClient.del(`hands:${socket.roomId}`);
-          } catch (err) {}
+            await clearRoomModerationState(socket.roomId);
+          } catch (err) {
+            console.error('Redis cleanup error on teacher timeout:', err);
+          }
 
           delete activeRooms[socket.roomId];
         }, 120000); // 2 minutes
