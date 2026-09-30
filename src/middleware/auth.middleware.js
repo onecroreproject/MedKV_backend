@@ -12,6 +12,12 @@ exports.protect = async (req, res, next) => {
     token = req.headers.authorization.split(' ')[1];
   }
 
+  // Fallback: allow token in query param for browser-native video streaming
+  // (browser <video> tag cannot set Authorization headers)
+  if (!token && req.query.token) {
+    token = req.query.token;
+  }
+
   // Make sure token exists
   if (!token) {
     return res.status(401).json({ success: false, message: 'Not authorized to access this route' });

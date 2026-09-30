@@ -510,16 +510,21 @@ exports.livekitWebhook = async (req, res) => {
 // ... keep existing getRecordings, getRecording, updateRecording, deleteRecording, streamRecording, downloadRecording
 exports.getRecordings = async (req, res) => {
   try {
-    const { search, course, status } = req.query;
+    const { search, course, status, page = 1, limit = 20 } = req.query;
     let query = {};
     if (search) query.title = { $regex: search, $options: 'i' };
     if (course) query.course = course;
     if (status) query.recordingState = status;
 
+    const skip = (Number(page) - 1) * Number(limit);
+    const total = await ClassRecording.countDocuments(query);
+
     let recordings = await ClassRecording.find(query)
       .populate('course', 'title')
       .populate('teacher', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
 
     // Active Fallback for processing recordings when viewing the list
     for (const rec of recordings) {
@@ -554,13 +559,25 @@ exports.getRecordings = async (req, res) => {
       }
     }
     
-    // Refetch in case anything merged
+    // Refetch in case anything merged (apply same pagination)
     recordings = await ClassRecording.find(query)
       .populate('course', 'title')
       .populate('teacher', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit));
 
-    res.status(200).json({ success: true, count: recordings.length, data: recordings });
+    res.status(200).json({
+      success: true,
+      count: recordings.length,
+      data: recordings,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
   } catch (error) {
     console.error('Error fetching class recordings:', error);
     res.status(500).json({ success: false, message: 'Server Error' });

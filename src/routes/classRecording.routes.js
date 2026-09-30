@@ -31,6 +31,10 @@ router.post('/resume', authorize('Admin', 'Faculty'), resumeRecording);
 router.post('/stop', authorize('Admin', 'Faculty'), stopRecording);
 router.get('/status/:roomName', authorize('Admin', 'Faculty'), getRecordingStatus);
 
+// Stream and download — Admin and Faculty (Faculty auth is enforced in controller)
+router.get('/:id/stream', authorize('Admin', 'Faculty'), streamRecording);
+router.get('/:id/download', authorize('Admin', 'Faculty'), downloadRecording);
+
 // Rest are Admin only
 router.use(authorize('Admin'));
 
@@ -41,8 +45,5 @@ router.route('/:id')
   .get(getRecording)
   .put(updateRecording)
   .delete(deleteRecording);
-
-router.get('/:id/stream', streamRecording);
-router.get('/:id/download', downloadRecording);
 
 module.exports = router;
