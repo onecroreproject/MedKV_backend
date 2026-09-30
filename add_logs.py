@@ -1,180 +1,13 @@
-const fs = require('fs');
-const path = require('path');
-const ClassRecording = require('../models/ClassRecording.model');
-const LiveClass = require('../models/LiveClass.model');
-const { EgressClient, EncodedFileOutput, EncodedFileType } = require('livekit-server-sdk');
-const { mergeSegments } = require('../utils/ffmpegMerge');
+import re
 
-const EGRESS_DIR = '/opt/livekit/egress/recordings/';
-
-const egressClient = new EgressClient(
-  process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com', // Should ideally use HTTP/WS internal URL if possible, or public
-  process.env.LIVEKIT_API_KEY,
-  process.env.LIVEKIT_API_SECRET
-);
-
-const normalizeEgressStatus = (status) => {
-  const statusMap = {
-    0: 'EGRESS_STARTING',
-    1: 'EGRESS_ACTIVE',
-    2: 'EGRESS_ENDING',
-    3: 'EGRESS_COMPLETE',
-    4: 'EGRESS_FAILED',
-    5: 'EGRESS_ABORTED',
-    6: 'EGRESS_LIMIT_REACHED',
-  };
-
-  if (typeof status === 'number') {
-    return statusMap[status] || `EGRESS_UNKNOWN_${status}`;
-  }
-
-  if (typeof status === 'string' && /^\d+$/.test(status)) {
-    return statusMap[Number(status)] || `EGRESS_UNKNOWN_${status}`;
-  }
-
-  return status;
-};
-
-// Helper to trigger merge
-const triggerMergeIfReady = async (recordingId) => {
-  const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  try {
-    const recording = await ClassRecording.findById(recordingId);
-    if (!recording || recording.recordingState !== 'processing') return;
-
-    const allComplete = recording.segments.every(s => 
-      s.status === 'EGRESS_COMPLETE' || s.status === 'EGRESS_FAILED' || s.status === 'EGRESS_ABORTED' || s.status === 'EGRESS_LIMIT_REACHED'
-    );
-
-    if (allComplete) {
-      const successfulSegments = recording.segments.filter(s => s.status === 'EGRESS_COMPLETE' && s.filePath && fs.existsSync(s.filePath));
-      
-      console.log('[Recording][Segments] Checking recording segments');
-      console.log('[Recording][Segments] Recording ID:', recordingId);
-      console.log('[Recording][Segments] Segment count:', successfulSegments.length);
-
-      if (successfulSegments.length === 0) {
-        console.error('[Recording][Segments] NO SEGMENTS FOUND');
-        recording.recordingState = 'failed';
-        recording.errorMessage = 'All segments failed or files missing';
-        await recording.save();
-
-        console.error('');
-        console.error('[Recording] ========================================');
-        console.error('[Recording] RECORDING FAILED');
-        console.error('[Recording] Trace ID:', traceId);
-        console.error('[Recording] Recording ID:', recordingId);
-        console.error('[Recording] Error: No valid segments to merge');
-        console.error('[Recording] ========================================');
-        return;
-      }
-
-      successfulSegments.forEach(segment => {
-        console.log('[Recording][Segments] Segment:', {
-          filename: segment.fileName || segment.filePath,
-          duration: segment.duration,
-          size: segment.fileSize
-        });
-      });
-
-      const pathsToMerge = successfulSegments.map(s => s.filePath);
-      const safeCourseName = (recording.title || 'recording').replace(/[^a-zA-Z0-9]/g, '_');
-      const timestamp = new Date().toISOString().slice(0, 10);
-      const finalFileName = `${safeCourseName}_Merged_${timestamp}_${Date.now()}.mp4`;
-      const finalOutputPath = path.join(EGRESS_DIR, finalFileName);
-
-      console.log('[Recording][FFmpeg] ================================');
-      console.log('[Recording][FFmpeg] Starting merge');
-      console.log('[Recording][FFmpeg] Input count:', pathsToMerge.length);
-      console.log('[Recording][FFmpeg] Output:', finalOutputPath);
-      console.log('[Recording][FFmpeg] PROCESS STARTED');
-
-      try {
-        await mergeSegments(pathsToMerge, finalOutputPath);
-        
-        console.log('[Recording][FFmpeg] MERGE SUCCESS');
-        console.log('[Recording][FFmpeg] Output:', finalOutputPath);
-        console.log('[Recording][FFmpeg] Output exists:', fs.existsSync(finalOutputPath));
-        
-        let totalDuration = 0;
-        let totalSize = 0;
-        successfulSegments.forEach(s => {
-          totalDuration += (s.duration || 0);
-          totalSize += (s.fileSize || 0);
-        });
-
-        if (fs.existsSync(finalOutputPath)) {
-          const stat = fs.statSync(finalOutputPath);
-          totalSize = stat.size;
-        }
-
-        console.log('[Recording][Mongo] Updating final recording');
-        console.log('[Recording][Mongo] Recording ID:', recordingId);
-        console.log('[Recording][Mongo] Final file:', finalFileName);
-        console.log('[Recording][Mongo] Duration:', totalDuration);
-        console.log('[Recording][Mongo] Size:', totalSize);
-
-        recording.recordingState = 'completed';
-        recording.fileName = finalFileName;
-        recording.filePath = finalOutputPath;
-        recording.duration = totalDuration;
-        recording.fileSize = totalSize;
-        recording.endedAt = new Date();
-        await recording.save();
-
-        console.log('[Recording][Mongo] FINAL RECORDING SAVED');
-        console.log('[Recording][Mongo] Recording ID:', recordingId);
-        console.log('[Recording][Mongo] Status:', 'completed');
-
-        for (const segPath of pathsToMerge) {
-          try { if (fs.existsSync(segPath)) fs.unlinkSync(segPath); } catch(e) {}
-        }
-
-        console.log('');
-        console.log('[Recording] ========================================');
-        console.log('[Recording] RECORDING COMPLETED SUCCESSFULLY');
-        console.log('[Recording] Trace ID:', traceId);
-        console.log('[Recording] Recording ID:', recordingId);
-        console.log('[Recording] Egress ID:', recording.egressId);
-        console.log('[Recording] Room:', recording.roomName);
-        console.log('[Recording] Duration:', totalDuration);
-        console.log('[Recording] File:', finalOutputPath);
-        console.log('[Recording] ========================================');
-
-      } catch (mergeError) {
-        console.error('[Recording][FFmpeg] MERGE FAILED');
-        console.error('[Recording][FFmpeg] Message:', mergeError.message);
-        console.error('[Recording][FFmpeg][stderr]', mergeError.stderr || 'No stderr');
-        
-        console.error('[Recording][Mongo] FINAL UPDATE FAILED');
-        console.error('[Recording][Mongo] Error:', mergeError.message);
-
-        recording.recordingState = 'failed';
-        recording.errorMessage = 'Merge failed: ' + mergeError.message;
-        await recording.save();
-
-        console.error('');
-        console.error('[Recording] ========================================');
-        console.error('[Recording] RECORDING FAILED');
-        console.error('[Recording] Trace ID:', traceId);
-        console.error('[Recording] Recording ID:', recordingId);
-        console.error('[Recording] Error:', mergeError.message);
-        console.error('[Recording] ========================================');
-      }
-    }
-  } catch(error) {
-    console.error('[Recording][Error]', {
-      operation: 'MERGE',
-      traceId,
-      recordingId,
-      message: error.message
-    });
-  }
-};
-// @desc    Start Recording
-// @route   POST /api/v1/class-recordings/start
-// @access  Private (Teacher/Admin)
-exports.startRecording = async (req, res) => {
+def main():
+    file_path = r'r:\ClientProject\MediacalKV\backend\src\controllers\classRecording.controller.js'
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # We will replace startRecording, pauseRecording, resumeRecording, stopRecording, triggerMergeIfReady, getRecordingStatus, livekitWebhook.
+    
+    start_rec_replacement = """exports.startRecording = async (req, res) => {
   const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   console.log('[Recording][Controller] ================================');
   console.log('[Recording][Controller] START RECORDING');
@@ -323,11 +156,9 @@ exports.startRecording = async (req, res) => {
     });
     res.status(500).json({ success: false, message: error.message });
   }
-};
-// @desc    Pause Recording
-// @route   POST /api/v1/class-recordings/pause
-// @access  Private (Teacher/Admin)
-exports.pauseRecording = async (req, res) => {
+};"""
+
+    pause_rec_replacement = """exports.pauseRecording = async (req, res) => {
   const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   console.log('[Recording][Controller] ================================');
   console.log('[Recording][Controller] PAUSE RECORDING');
@@ -389,11 +220,9 @@ exports.pauseRecording = async (req, res) => {
     });
     res.status(500).json({ success: false, message: error.message });
   }
-};
-// @desc    Resume Recording
-// @route   POST /api/v1/class-recordings/resume
-// @access  Private (Teacher/Admin)
-exports.resumeRecording = async (req, res) => {
+};"""
+
+    resume_rec_replacement = """exports.resumeRecording = async (req, res) => {
   const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   console.log('[Recording][Controller] ================================');
   console.log('[Recording][Controller] RESUME RECORDING');
@@ -462,11 +291,9 @@ exports.resumeRecording = async (req, res) => {
     });
     res.status(500).json({ success: false, message: error.message });
   }
-};
-// @desc    Stop Recording (Finalize)
-// @route   POST /api/v1/class-recordings/stop
-// @access  Private (Teacher/Admin)
-exports.stopRecording = async (req, res) => {
+};"""
+
+    stop_rec_replacement = """exports.stopRecording = async (req, res) => {
   const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   console.log('[Recording][Controller] ================================');
   console.log('[Recording][Controller] STOP RECORDING');
@@ -538,84 +365,9 @@ exports.stopRecording = async (req, res) => {
     });
     res.status(500).json({ success: false, message: error.message });
   }
-};
-// @desc    Get Recording Status
-// @route   GET /api/v1/class-recordings/status/:roomName
-// @access  Private (Teacher/Admin)
-exports.getRecordingStatus = async (req, res) => {
-  console.log('[Recording][Status] Request received');
-  console.log('[Recording][Status] Room ID:', req.params?.roomName);
-  try {
-    const { roomName } = req.params;
-    const recording = await ClassRecording.findOne({ roomName }).sort({ createdAt: -1 });
-    
-    if (!recording) {
-      console.log('[Recording][Status] No active recording found');
-      return res.status(200).json({ success: true, data: { recordingState: 'idle' } });
-    }
-    
-    console.log('[Recording][Status] Recording found');
-    console.log('[Recording][Status] Recording ID:', recording._id);
-    console.log('[Recording][Status] Status:', recording.recordingState);
-    console.log('[Recording][Status] Egress ID:', recording.egressId);
+};"""
 
-    let updated = false;
-    if (recording.recordingState === 'processing' || recording.recordingState === 'recording' || recording.recordingState === 'paused') {
-      try {
-        const activeEgresses = await egressClient.listEgress({ roomName });
-        for (const egressInfo of activeEgresses) {
-          const seg = recording.segments.find(s => s.egressId === egressInfo.egressId);
-          if (seg) {
-            const normalizedStatus = normalizeEgressStatus(egressInfo.status);
-            if (seg.status !== normalizedStatus) {
-              seg.status = normalizedStatus;
-              updated = true;
-              if (normalizedStatus === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
-                const fileResult = egressInfo.fileResults[0];
-                const actualFileName = path.basename(fileResult.filename);
-                seg.fileName = actualFileName;
-                seg.filePath = path.join(EGRESS_DIR, actualFileName);
-                seg.duration = fileResult.duration ? Math.floor(Number(fileResult.duration) / 1000000000) : 0;
-                seg.fileSize = Number(fileResult.size);
-                seg.endedAt = new Date();
-              }
-            }
-          }
-        }
-        if (updated) {
-          await recording.save();
-          if (recording.recordingState === 'processing') {
-            await triggerMergeIfReady(recording._id);
-          }
-        }
-      } catch (err) {
-        console.error('Fallback egress check error:', err);
-      }
-    }
-
-    let accumulatedDuration = 0;
-    recording.segments.forEach(s => {
-      if (s.duration) {
-        accumulatedDuration += s.duration;
-      } else if (s.startedAt && (recording.recordingState === 'recording' || s.status === 'EGRESS_ACTIVE' || s.status === 'EGRESS_STARTING')) {
-        accumulatedDuration += Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000);
-      }
-    });
-
-    res.status(200).json({ success: true, data: { 
-      recordingState: recording.recordingState,
-      accumulatedDuration,
-      startedAt: recording.startedAt
-    }});
-  } catch (error) {
-    console.error('getRecordingStatus error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-// @desc    LiveKit Webhook Receiver for Egress
-// @route   POST /api/v1/class-recordings/webhook
-// @access  Public (Validated via SDK)
-exports.livekitWebhook = async (req, res) => {
+    webhook_replacement = """exports.livekitWebhook = async (req, res) => {
   console.log('');
   console.log('[Recording][Webhook] ================================');
   console.log('[Recording][Webhook] WEBHOOK RECEIVED');
@@ -762,186 +514,236 @@ exports.livekitWebhook = async (req, res) => {
     });
     res.status(500).send('Server Error');
   }
-};
-exports.getRecordings = async (req, res) => {
+};"""
+
+    merge_replacement = """const triggerMergeIfReady = async (recordingId) => {
+  const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
-    const { search, course, status, page = 1, limit = 20 } = req.query;
-    let query = {};
-    if (search) query.title = { $regex: search, $options: 'i' };
-    if (course) query.course = course;
-    if (status) query.recordingState = status;
+    const recording = await ClassRecording.findById(recordingId);
+    if (!recording || recording.recordingState !== 'processing') return;
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const total = await ClassRecording.countDocuments(query);
+    const allComplete = recording.segments.every(s => 
+      s.status === 'EGRESS_COMPLETE' || s.status === 'EGRESS_FAILED' || s.status === 'EGRESS_ABORTED' || s.status === 'EGRESS_LIMIT_REACHED'
+    );
 
-    let recordings = await ClassRecording.find(query)
-      .populate('course', 'title')
-      .populate('teacher', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
+    if (allComplete) {
+      const successfulSegments = recording.segments.filter(s => s.status === 'EGRESS_COMPLETE' && s.filePath && fs.existsSync(s.filePath));
+      
+      console.log('[Recording][Segments] Checking recording segments');
+      console.log('[Recording][Segments] Recording ID:', recordingId);
+      console.log('[Recording][Segments] Segment count:', successfulSegments.length);
 
-    // Active Fallback for processing recordings when viewing the list
-    for (const rec of recordings) {
-      if (rec.recordingState === 'processing') {
-        let updated = false;
-        try {
-          const activeEgresses = await egressClient.listEgress({ roomName: rec.roomName });
-          for (const egressInfo of activeEgresses) {
-            const seg = rec.segments.find(s => s.egressId === egressInfo.egressId);
-            if (seg) {
-              const normalizedStatus = normalizeEgressStatus(egressInfo.status);
-              if (seg.status !== normalizedStatus) {
-                seg.status = normalizedStatus;
-                updated = true;
-                if (normalizedStatus === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
-                  const fileResult = egressInfo.fileResults[0];
-                  const actualFileName = path.basename(fileResult.filename);
-                  seg.fileName = actualFileName;
-                  seg.filePath = path.join(EGRESS_DIR, actualFileName);
-                  seg.duration = fileResult.duration ? Math.floor(Number(fileResult.duration) / 1000000000) : 0;
-                  seg.fileSize = Number(fileResult.size);
-                  seg.endedAt = new Date();
-                }
+      if (successfulSegments.length === 0) {
+        console.error('[Recording][Segments] NO SEGMENTS FOUND');
+        recording.recordingState = 'failed';
+        recording.errorMessage = 'All segments failed or files missing';
+        await recording.save();
+
+        console.error('');
+        console.error('[Recording] ========================================');
+        console.error('[Recording] RECORDING FAILED');
+        console.error('[Recording] Trace ID:', traceId);
+        console.error('[Recording] Recording ID:', recordingId);
+        console.error('[Recording] Error: No valid segments to merge');
+        console.error('[Recording] ========================================');
+        return;
+      }
+
+      successfulSegments.forEach(segment => {
+        console.log('[Recording][Segments] Segment:', {
+          filename: segment.fileName || segment.filePath,
+          duration: segment.duration,
+          size: segment.fileSize
+        });
+      });
+
+      const pathsToMerge = successfulSegments.map(s => s.filePath);
+      const safeCourseName = (recording.title || 'recording').replace(/[^a-zA-Z0-9]/g, '_');
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const finalFileName = `${safeCourseName}_Merged_${timestamp}_${Date.now()}.mp4`;
+      const finalOutputPath = path.join(EGRESS_DIR, finalFileName);
+
+      console.log('[Recording][FFmpeg] ================================');
+      console.log('[Recording][FFmpeg] Starting merge');
+      console.log('[Recording][FFmpeg] Input count:', pathsToMerge.length);
+      console.log('[Recording][FFmpeg] Output:', finalOutputPath);
+      console.log('[Recording][FFmpeg] PROCESS STARTED');
+
+      try {
+        await mergeSegments(pathsToMerge, finalOutputPath);
+        
+        console.log('[Recording][FFmpeg] MERGE SUCCESS');
+        console.log('[Recording][FFmpeg] Output:', finalOutputPath);
+        console.log('[Recording][FFmpeg] Output exists:', fs.existsSync(finalOutputPath));
+        
+        let totalDuration = 0;
+        let totalSize = 0;
+        successfulSegments.forEach(s => {
+          totalDuration += (s.duration || 0);
+          totalSize += (s.fileSize || 0);
+        });
+
+        if (fs.existsSync(finalOutputPath)) {
+          const stat = fs.statSync(finalOutputPath);
+          totalSize = stat.size;
+        }
+
+        console.log('[Recording][Mongo] Updating final recording');
+        console.log('[Recording][Mongo] Recording ID:', recordingId);
+        console.log('[Recording][Mongo] Final file:', finalFileName);
+        console.log('[Recording][Mongo] Duration:', totalDuration);
+        console.log('[Recording][Mongo] Size:', totalSize);
+
+        recording.recordingState = 'completed';
+        recording.fileName = finalFileName;
+        recording.filePath = finalOutputPath;
+        recording.duration = totalDuration;
+        recording.fileSize = totalSize;
+        recording.endedAt = new Date();
+        await recording.save();
+
+        console.log('[Recording][Mongo] FINAL RECORDING SAVED');
+        console.log('[Recording][Mongo] Recording ID:', recordingId);
+        console.log('[Recording][Mongo] Status:', 'completed');
+
+        for (const segPath of pathsToMerge) {
+          try { if (fs.existsSync(segPath)) fs.unlinkSync(segPath); } catch(e) {}
+        }
+
+        console.log('');
+        console.log('[Recording] ========================================');
+        console.log('[Recording] RECORDING COMPLETED SUCCESSFULLY');
+        console.log('[Recording] Trace ID:', traceId);
+        console.log('[Recording] Recording ID:', recordingId);
+        console.log('[Recording] Egress ID:', recording.egressId);
+        console.log('[Recording] Room:', recording.roomName);
+        console.log('[Recording] Duration:', totalDuration);
+        console.log('[Recording] File:', finalOutputPath);
+        console.log('[Recording] ========================================');
+
+      } catch (mergeError) {
+        console.error('[Recording][FFmpeg] MERGE FAILED');
+        console.error('[Recording][FFmpeg] Message:', mergeError.message);
+        console.error('[Recording][FFmpeg][stderr]', mergeError.stderr || 'No stderr');
+        
+        console.error('[Recording][Mongo] FINAL UPDATE FAILED');
+        console.error('[Recording][Mongo] Error:', mergeError.message);
+
+        recording.recordingState = 'failed';
+        recording.errorMessage = 'Merge failed: ' + mergeError.message;
+        await recording.save();
+
+        console.error('');
+        console.error('[Recording] ========================================');
+        console.error('[Recording] RECORDING FAILED');
+        console.error('[Recording] Trace ID:', traceId);
+        console.error('[Recording] Recording ID:', recordingId);
+        console.error('[Recording] Error:', mergeError.message);
+        console.error('[Recording] ========================================');
+      }
+    }
+  } catch(error) {
+    console.error('[Recording][Error]', {
+      operation: 'MERGE',
+      traceId,
+      recordingId,
+      message: error.message
+    });
+  }
+};"""
+
+    status_replacement = """exports.getRecordingStatus = async (req, res) => {
+  console.log('[Recording][Status] Request received');
+  console.log('[Recording][Status] Room ID:', req.params?.roomName);
+  try {
+    const { roomName } = req.params;
+    const recording = await ClassRecording.findOne({ roomName }).sort({ createdAt: -1 });
+    
+    if (!recording) {
+      console.log('[Recording][Status] No active recording found');
+      return res.status(200).json({ success: true, data: { recordingState: 'idle' } });
+    }
+    
+    console.log('[Recording][Status] Recording found');
+    console.log('[Recording][Status] Recording ID:', recording._id);
+    console.log('[Recording][Status] Status:', recording.recordingState);
+    console.log('[Recording][Status] Egress ID:', recording.egressId);
+
+    let updated = false;
+    if (recording.recordingState === 'processing' || recording.recordingState === 'recording' || recording.recordingState === 'paused') {
+      try {
+        const activeEgresses = await egressClient.listEgress({ roomName });
+        for (const egressInfo of activeEgresses) {
+          const seg = recording.segments.find(s => s.egressId === egressInfo.egressId);
+          if (seg) {
+            const normalizedStatus = normalizeEgressStatus(egressInfo.status);
+            if (seg.status !== normalizedStatus) {
+              seg.status = normalizedStatus;
+              updated = true;
+              if (normalizedStatus === 'EGRESS_COMPLETE' && egressInfo.fileResults && egressInfo.fileResults.length > 0) {
+                const fileResult = egressInfo.fileResults[0];
+                const actualFileName = path.basename(fileResult.filename);
+                seg.fileName = actualFileName;
+                seg.filePath = path.join(EGRESS_DIR, actualFileName);
+                seg.duration = fileResult.duration ? Math.floor(Number(fileResult.duration) / 1000000000) : 0;
+                seg.fileSize = Number(fileResult.size);
+                seg.endedAt = new Date();
               }
             }
           }
-          if (updated) {
-            await rec.save();
-            await triggerMergeIfReady(rec._id);
-          }
-        } catch(e) {}
-      }
-    }
-    
-    // Refetch in case anything merged (apply same pagination)
-    recordings = await ClassRecording.find(query)
-      .populate('course', 'title')
-      .populate('teacher', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit));
-
-    res.status(200).json({
-      success: true,
-      count: recordings.length,
-      data: recordings,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        totalPages: Math.ceil(total / Number(limit))
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching class recordings:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-exports.getRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id)
-      .populate('course', 'title')
-      .populate('teacher', 'name email');
-    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
-    res.status(200).json({ success: true, data: recording });
-  } catch (error) {
-    console.error('Error fetching recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-exports.updateRecording = async (req, res) => {
-  try {
-    const { title, description, course } = req.body;
-    const recording = await ClassRecording.findByIdAndUpdate(req.params.id, { title, description, course }, { new: true, runValidators: true });
-    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
-    res.status(200).json({ success: true, data: recording });
-  } catch (error) {
-    console.error('Error updating recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
-
-exports.deleteRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
-    
-    // delete merged file
-    if (recording.filePath) {
-      const fullPath = path.resolve(recording.filePath);
-      if (fullPath.startsWith(path.resolve(EGRESS_DIR)) && fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
-      }
-    }
-    // delete segments
-    if (recording.segments) {
-      recording.segments.forEach(s => {
-        if (s.filePath) {
-          const segPath = path.resolve(s.filePath);
-          if (segPath.startsWith(path.resolve(EGRESS_DIR)) && fs.existsSync(segPath)) {
-             try { fs.unlinkSync(segPath); } catch(e) {}
+        }
+        if (updated) {
+          await recording.save();
+          if (recording.recordingState === 'processing') {
+            await triggerMergeIfReady(recording._id);
           }
         }
-      });
+      } catch (err) {
+        console.error('Fallback egress check error:', err);
+      }
     }
-    
-    await recording.deleteOne();
-    res.status(200).json({ success: true, data: {} });
-  } catch (error) {
-    console.error('Error deleting recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
 
-exports.streamRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
-    
-    const fullPath = path.resolve(recording.filePath);
-    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
-    if (!fs.existsSync(fullPath)) return res.status(404).json({ success: false, message: 'Video file not found on disk' });
-    
-    const stat = fs.statSync(fullPath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-    
-    if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      if (start >= fileSize) return res.status(416).send('Requested range not satisfiable');
-      const chunksize = (end - start) + 1;
-      const file = fs.createReadStream(fullPath, { start, end });
-      const head = { 'Content-Range': `bytes ${start}-${end}/${fileSize}`, 'Accept-Ranges': 'bytes', 'Content-Length': chunksize, 'Content-Type': 'video/mp4' };
-      res.writeHead(206, head);
-      file.pipe(res);
-    } else {
-      const head = { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' };
-      res.writeHead(200, head);
-      fs.createReadStream(fullPath).pipe(res);
-    }
-  } catch (error) {
-    console.error('Error streaming recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
-  }
-};
+    let accumulatedDuration = 0;
+    recording.segments.forEach(s => {
+      if (s.duration) {
+        accumulatedDuration += s.duration;
+      } else if (s.startedAt && (recording.recordingState === 'recording' || s.status === 'EGRESS_ACTIVE' || s.status === 'EGRESS_STARTING')) {
+        accumulatedDuration += Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000);
+      }
+    });
 
-exports.downloadRecording = async (req, res) => {
-  try {
-    const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
-    
-    const fullPath = path.resolve(recording.filePath);
-    if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
-    if (!fs.existsSync(fullPath)) return res.status(404).json({ success: false, message: 'Video file not found on disk' });
-    
-    res.download(fullPath, recording.fileName || 'recording.mp4');
+    res.status(200).json({ success: true, data: { 
+      recordingState: recording.recordingState,
+      accumulatedDuration,
+      startedAt: recording.startedAt
+    }});
   } catch (error) {
-    console.error('Error downloading recording:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    console.error('getRecordingStatus error:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
-};
+};"""
+
+    # We use regex to replace the function bodies robustly.
+    import re
+    
+    # helper to replace function body
+    def replace_func(name, replacement, content):
+        pattern = re.compile(r'(?:const\s+' + name + r'\s*=\s*async\s*\(.*?\)\s*=>\s*\{|exports\.' + name + r'\s*=\s*async\s*\(.*?\)\s*=>\s*\{).*?(?=\n(?:const\s+\w+|exports\.\w+|// @desc|module\.exports)|\Z)', re.DOTALL)
+        return pattern.sub(replacement, content, count=1)
+
+    new_content = content
+    new_content = replace_func('triggerMergeIfReady', merge_replacement, new_content)
+    new_content = replace_func('startRecording', start_rec_replacement, new_content)
+    new_content = replace_func('pauseRecording', pause_rec_replacement, new_content)
+    new_content = replace_func('resumeRecording', resume_rec_replacement, new_content)
+    new_content = replace_func('stopRecording', stop_rec_replacement, new_content)
+    new_content = replace_func('livekitWebhook', webhook_replacement, new_content)
+    new_content = replace_func('getRecordingStatus', status_replacement, new_content)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    
+    print("Replacements complete")
+
+if __name__ == '__main__':
+    main()
