@@ -5,8 +5,11 @@ require('dotenv').config();
 
 const PORT = process.env.PORT || 5000;
 
+const { connectRedis } = require('./src/config/redis');
+
 // Connect to MongoDB
 connectDB();
+connectRedis();
 
 const server = http.createServer(app);
 
@@ -22,6 +25,8 @@ const io = new Server(server, {
 
 const webrtcHandler = require('./src/socket/webrtcHandler');
 const adminHandler = require('./src/socket/adminHandler');
+const admissionHandler = require('./src/socket/admissionHandler');
+const classroomHandler = require('./src/socket/classroomHandler');
 
 // Expose globally for controllers/utils to emit events
 global.io = io;
@@ -38,6 +43,8 @@ io.on('connection', (socket) => {
   // Pass socket instance to handlers
   webrtcHandler(io, socket);
   adminHandler(io, socket);
+  admissionHandler(io, socket);
+  classroomHandler(io, socket);
 });
 
 server.on('error', (e) => {

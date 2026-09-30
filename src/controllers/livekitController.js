@@ -55,6 +55,15 @@ const createLiveKitToken = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to join this class' });
     }
 
+    // Strict admission check for students
+    if (!isTeacher) {
+      const { redisClient } = require('../config/redis');
+      const isAdmitted = await redisClient.sIsMember(`admitted:${roomId}`, userId.toString());
+      if (!isAdmitted) {
+        return res.status(403).json({ message: 'You have not been admitted by the host yet.' });
+      }
+    }
+
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,

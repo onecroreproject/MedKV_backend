@@ -28,6 +28,7 @@
     "os-utils": "^0.0.14",
     "pdfkit": "^0.19.1",
     "razorpay": "^2.9.6",
+    "redis": "^6.3.0",
     "socket.io": "^4.8.3",
     "ua-parser-js": "^2.0.10"
   },

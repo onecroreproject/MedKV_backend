@@ -126,13 +126,23 @@ module.exports = (io, socket) => {
   });
 
   // Admit Student from Waiting Room
-  socket.on('admit-student', (payload) => {
+  socket.on('admit-student', async (payload) => {
     const { targetId } = payload;
     const room = activeRooms[socket.roomId];
     if (room && room.waiting && room.waiting[targetId]) {
       const studentData = room.waiting[targetId];
       // Add to session memory
       room.admittedUsers.add(studentData.userId);
+      
+      // Also add to Redis for new livekitController check
+      try {
+        const { redisClient } = require('../config/redis');
+        await redisClient.sAdd(`admitted:${socket.roomId}`, studentData.userId.toString());
+        await redisClient.expire(`admitted:${socket.roomId}`, 4 * 3600);
+      } catch (err) {
+        console.error('Redis admit error:', err);
+      }
+
       // Move from waiting to students
       room.students[targetId] = studentData;
       delete room.waiting[targetId];
@@ -159,13 +169,21 @@ module.exports = (io, socket) => {
   });
 
   // Admit All Students
-  socket.on('admit-all', () => {
+  socket.on('admit-all', async () => {
     const room = activeRooms[socket.roomId];
     if (room && room.waiting) {
-      Object.keys(room.waiting).forEach(targetId => {
+      const { redisClient } = require('../config/redis');
+      
+      for (const targetId of Object.keys(room.waiting)) {
         const studentData = room.waiting[targetId];
         room.admittedUsers.add(studentData.userId);
         room.students[targetId] = studentData;
+        
+        try {
+          await redisClient.sAdd(`admitted:${socket.roomId}`, studentData.userId.toString());
+        } catch (err) {
+          console.error('Redis admit error:', err);
+        }
         
         io.to(targetId).emit('admitted');
         
@@ -178,7 +196,11 @@ module.exports = (io, socket) => {
           { $setOnInsert: { joinTime: new Date() }, $set: { status: 'Present' } },
           { upsert: true, new: true }
         ).exec().catch(err => console.error('Attendance track error:', err));
-      });
+      }
+      try {
+        await redisClient.expire(`admitted:${socket.roomId}`, 4 * 3600);
+      } catch (err) {}
+
       room.waiting = {};
 
       const participantCount = Object.keys(room.students).length;
@@ -216,6 +238,23 @@ module.exports = (io, socket) => {
         await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', status: 'Completed', endedAt: new Date(), liveParticipants: 0 });
         io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
         io.emit('liveClassUpdate');
+        
+        try {
+          const { redisClient } = require('../config/redis');
+          await redisClient.del(`admitted:${socket.roomId}`);
+          
+          // Clear any remaining waiting students just in case
+          const keys = await redisClient.keys(`waiting-room:${socket.roomId}:*`);
+          if (keys && keys.length > 0) {
+            await redisClient.del(keys);
+          }
+          
+          // Clear raised hands
+          await redisClient.del(`hands:${socket.roomId}`);
+        } catch (err) {
+          console.error('Redis cleanup error on end class:', err);
+        }
+
         delete activeRooms[socket.roomId];
       }
     }
@@ -321,6 +360,17 @@ module.exports = (io, socket) => {
           await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
           io.to('admin-room').emit('room-stats-update', { roomId: socket.roomId, participants: 0, status: 'ended' });
           io.emit('liveClassUpdate');
+          
+          try {
+            const { redisClient } = require('../config/redis');
+            await redisClient.del(`admitted:${socket.roomId}`);
+            const keys = await redisClient.keys(`waiting-room:${socket.roomId}:*`);
+            if (keys && keys.length > 0) {
+              await redisClient.del(keys);
+            }
+            await redisClient.del(`hands:${socket.roomId}`);
+          } catch (err) {}
+
           delete activeRooms[socket.roomId];
         }, 120000); // 2 minutes
       } else {
