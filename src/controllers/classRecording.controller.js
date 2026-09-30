@@ -127,14 +127,17 @@ exports.startRecording = async (req, res) => {
       filepath: `/out/recordings/class_${roomName}_{time}.mp4`
     });
 
-    const info = await egressClient.startRoomCompositeEgress(roomName, {
-      file: fileOutput
-    }, {
-      layout: 'grid',
-      customBaseUrl: 'https://recording.drsamreefathradiologyacademy.com',
-      videoOnly: false,
-      audioOnly: false
-    });
+    const info = await egressClient.startRoomCompositeEgress(
+      roomName,
+      {
+        file: fileOutput
+      },
+      {
+        layout: 'grid',
+        videoOnly: false,
+        audioOnly: false
+      }
+    );
 
     let courseId = null;
     let teacherId = null;
