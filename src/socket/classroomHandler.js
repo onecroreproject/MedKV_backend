@@ -312,15 +312,8 @@ module.exports = (io, socket) => {
 
   // ── Cleanup on disconnect ──────────────────────────────────────────────────
   socket.on('disconnect', async () => {
-    if (socket.classroomRoomId && socket.classroomUserId) {
-      try {
-        await removeRaisedHand(socket.classroomRoomId, socket.classroomUserId);
-        io.to(socket.classroomRoomId).emit('class:hand-updated', { 
-          userId: socket.classroomUserId, action: 'lowered' 
-        });
-      } catch (err) {
-        console.error('[Classroom] disconnect cleanup error:', err.message);
-      }
-    }
+    // Note: Do NOT remove raised hands or moderation state on socket disconnect.
+    // Temporary network drops should not cause users to lose their state.
+    // The state is cleaned up when the class ends or explicitly lowered.
   });
 };

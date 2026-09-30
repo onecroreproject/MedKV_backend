@@ -23,6 +23,9 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8 // Allow up to 100MB for media/chat
 });
 
+// Make io accessible in REST controllers
+app.set('io', io);
+
 const webrtcHandler = require('./src/socket/webrtcHandler');
 const adminHandler = require('./src/socket/adminHandler');
 const admissionHandler = require('./src/socket/admissionHandler');

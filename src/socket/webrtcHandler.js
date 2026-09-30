@@ -1,6 +1,38 @@
 const LiveClass = require('../models/LiveClass.model');
 const Attendance = require('../models/Attendance.model');
+const ClassRecording = require('../models/ClassRecording.model');
 const { clearRoomModerationState } = require('../services/classroom.service');
+const { EgressClient } = require('livekit-server-sdk');
+
+const egressClient = new EgressClient(
+  process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com',
+  process.env.LIVEKIT_API_KEY,
+  process.env.LIVEKIT_API_SECRET
+);
+
+async function stopActiveRecording(roomId, io) {
+  try {
+    const recording = await ClassRecording.findOne({ roomName: roomId, recordingState: { $in: ['recording', 'paused'] } });
+    if (recording) {
+      if (recording.activeEgressId && recording.recordingState === 'recording') {
+        await egressClient.stopEgress(recording.activeEgressId).catch(err => console.error('Egress stop error during class end', err));
+        recording.activeEgressId = null;
+      }
+      recording.recordingState = 'processing';
+      await recording.save();
+
+      if (io) {
+        io.to(roomId).emit('class:recording-stopping', {
+          roomId: roomId,
+          recordingId: recording._id,
+          status: 'stopping'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error stopping recording on end class:', err);
+  }
+}
 
 // In-memory store for active rooms
 // Structure: { roomId: { teacher: socketId, students: { studentSocketId: userObj } } }
@@ -237,6 +269,9 @@ module.exports = (io, socket) => {
       const room = activeRooms[socket.roomId];
       if (socket.userRole === 'Faculty' || socket.userRole === 'teacher' || socket.userRole === 'admin') {
         if (room.teacherTimeout) clearTimeout(room.teacherTimeout);
+        
+        await stopActiveRecording(socket.roomId, io);
+
         io.to(socket.roomId).emit('class-ended');
         room.teacher = null;
         room.students = {};
@@ -357,6 +392,9 @@ module.exports = (io, socket) => {
         
         room.teacherTimeout = setTimeout(async () => {
           console.log(`Grace period expired for room ${socket.roomId}. Ending class.`);
+          
+          await stopActiveRecording(socket.roomId, io);
+
           io.to(socket.roomId).emit('class-ended');
           io.to(socket.roomId).emit('teacher-left');
           await LiveClass.updateOne({ _id: socket.roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
@@ -415,3 +453,4 @@ module.exports = (io, socket) => {
 };
 
 module.exports.activeRooms = activeRooms;
+module.exports.stopActiveRecording = stopActiveRecording;

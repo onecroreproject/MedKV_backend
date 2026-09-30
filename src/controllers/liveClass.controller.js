@@ -2,7 +2,9 @@ const LiveClass = require('../models/LiveClass.model');
 const User = require('../models/User.model');
 const { createAndSendNotification } = require('../utils/notification.util');
 const dispatcher = require('../services/notificationDispatcher');
-
+const { stopActiveRecording, activeRooms } = require('../socket/webrtcHandler');
+const { clearRoomModerationState } = require('../services/classroom.service');
+const { redisClient } = require('../config/redis');
 const generateGCalLink = (liveClass) => {
   try {
     const d = new Date(liveClass.date);
@@ -171,6 +173,38 @@ exports.updateLiveClass = async (req, res) => {
 
     if (global.io) {
       global.io.emit('liveClassUpdate', liveClass);
+      
+      if (liveClass.status === 'Live Now' && oldStatus !== 'Live Now') {
+        // Just went live
+        await LiveClass.updateOne({ _id: liveClass._id }, { roomStatus: 'active', startedAt: new Date() });
+      }
+
+      // 3. Handle End Class explicitly
+      if (liveClass.status === 'Completed' && oldStatus !== 'Completed') {
+        const roomId = liveClass._id.toString();
+        await stopActiveRecording(roomId, global.io);
+
+        global.io.to(roomId).emit('class-ended');
+        global.io.to(roomId).emit('teacher-left');
+        await LiveClass.updateOne({ _id: roomId }, { roomStatus: 'ended', endedAt: new Date(), liveParticipants: 0 });
+        
+        // Clean redis state
+        try {
+          await redisClient.del(`admitted:${roomId}`);
+          const keys = await redisClient.keys(`waiting-room:${roomId}:*`);
+          if (keys && keys.length > 0) {
+            await redisClient.del(keys);
+          }
+          await redisClient.del(`hands:${roomId}`);
+          await clearRoomModerationState(roomId);
+        } catch (err) {
+          console.error('Redis cleanup error on end class via controller:', err);
+        }
+
+        if (activeRooms && activeRooms[roomId]) {
+          delete activeRooms[roomId];
+        }
+      }
     }
 
     res.status(200).json({ success: true, data: liveClass });

@@ -116,10 +116,23 @@ exports.startRecording = async (req, res) => {
     const { roomName } = req.body;
     if (!roomName) return res.status(400).json({ success: false, message: 'roomName is required' });
 
+    const liveClass = await LiveClass.findById(roomName);
+    if (!liveClass) {
+      return res.status(404).json({ success: false, message: 'LiveClass not found' });
+    }
+
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
+    }
+
+    if (liveClass.roomStatus !== 'active') {
+      return res.status(400).json({ success: false, message: 'CLASS_NOT_ACTIVE' });
+    }
+
     let recording = await ClassRecording.findOne({ roomName, recordingState: { $in: ['idle', 'recording', 'paused', 'processing'] } });
     
     if (recording && recording.recordingState !== 'idle') {
-      return res.status(400).json({ success: false, message: `Recording already in state: ${recording.recordingState}` });
+      return res.status(400).json({ success: false, message: 'RECORDING_ALREADY_ACTIVE' });
     }
 
     const fileOutput = new EncodedFileOutput({
@@ -143,7 +156,6 @@ exports.startRecording = async (req, res) => {
     let teacherId = null;
     let title = `Recording for ${roomName}`;
     
-    const liveClass = await LiveClass.findById(roomName).catch(() => null);
     if (liveClass) {
       courseId = liveClass.course;
       teacherId = liveClass.faculty;
@@ -172,6 +184,17 @@ exports.startRecording = async (req, res) => {
     });
 
     await recording.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(roomName).emit('class:recording-started', {
+        roomId: roomName,
+        recordingId: recording._id,
+        status: recording.recordingState,
+        startedAt: recording.startedAt
+      });
+    }
+
     res.status(200).json({ success: true, data: recording });
   } catch (error) {
     console.error('startRecording error:', error);
@@ -185,6 +208,13 @@ exports.startRecording = async (req, res) => {
 exports.pauseRecording = async (req, res) => {
   try {
     const { roomName } = req.body;
+
+    const liveClass = await LiveClass.findById(roomName);
+    if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
+    }
+
     const recording = await ClassRecording.findOne({ roomName, recordingState: 'recording' });
     
     if (!recording) return res.status(400).json({ success: false, message: 'No active recording found to pause.' });
@@ -210,6 +240,13 @@ exports.pauseRecording = async (req, res) => {
 exports.resumeRecording = async (req, res) => {
   try {
     const { roomName } = req.body;
+
+    const liveClass = await LiveClass.findById(roomName);
+    if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
+    }
+
     const recording = await ClassRecording.findOne({ roomName, recordingState: 'paused' });
     
     if (!recording) return res.status(400).json({ success: false, message: 'No paused recording found to resume.' });
@@ -250,9 +287,16 @@ exports.resumeRecording = async (req, res) => {
 exports.stopRecording = async (req, res) => {
   try {
     const { roomName } = req.body;
+
+    const liveClass = await LiveClass.findById(roomName);
+    if (!liveClass) return res.status(404).json({ success: false, message: 'LiveClass not found' });
+    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
+    }
+
     const recording = await ClassRecording.findOne({ roomName, recordingState: { $in: ['recording', 'paused'] } });
     
-    if (!recording) return res.status(400).json({ success: false, message: 'No active recording found to stop.' });
+    if (!recording) return res.status(400).json({ success: false, message: 'RECORDING_NOT_FOUND' });
 
     if (recording.activeEgressId && recording.recordingState === 'recording') {
       await egressClient.stopEgress(recording.activeEgressId).catch(err => console.error('Egress stop error', err));
@@ -264,6 +308,15 @@ exports.stopRecording = async (req, res) => {
 
     // Trigger merge just in case all segments already fired webhook
     await triggerMergeIfReady(recording._id);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(roomName).emit('class:recording-stopping', {
+        roomId: roomName,
+        recordingId: recording._id,
+        status: 'stopping'
+      });
+    }
 
     res.status(200).json({ success: true, data: recording });
   } catch (error) {
@@ -425,6 +478,19 @@ exports.livekitWebhook = async (req, res) => {
           seg.duration = duration;
           seg.fileSize = fileSize;
           await recording.save();
+
+          const io = req.app.get('io');
+          if (io) {
+            io.to(recording.roomName).emit(
+              normalizedStatus === 'EGRESS_COMPLETE' ? 'class:recording-completed' : 'class:recording-failed',
+              {
+                roomId: recording.roomName,
+                recordingId: recording._id,
+                status: normalizedStatus === 'EGRESS_COMPLETE' ? 'completed' : 'failed',
+                endedAt: seg.endedAt
+              }
+            );
+          }
         }
         
         // Check if we need to merge
