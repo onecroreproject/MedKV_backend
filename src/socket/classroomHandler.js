@@ -1,8 +1,10 @@
+const crypto = require('crypto');
 const { 
   addRaisedHand, 
   removeRaisedHand, 
   getRaisedHands, 
-  checkReactionRateLimit 
+  checkReactionRateLimit,
+  checkChatRateLimit
 } = require('../services/classroom.service');
 const { validateClassAccess } = require('../services/admission.service');
 const { redisClient } = require('../config/redis');
@@ -10,101 +12,138 @@ const { redisClient } = require('../config/redis');
 const ALLOWED_REACTIONS = ['❤️', '👍', '🎉', '👏', '😂', '😮', '😢', '🤔', '👎'];
 
 module.exports = (io, socket) => {
-  // Common validation middleware for classroom events
-  const validateAndExecute = async (roomId, userId, userRole, callback) => {
+  // Identity ALWAYS comes from the authenticated socket, never the payload
+  const uid  = socket.userId;
+  const role = socket.userRole;
+  const name = socket.userName;
+
+  // Common validation — roomId from payload; identity from socket
+  const validateAndExecute = async (roomId, callback) => {
     try {
-      const validation = await validateClassAccess(userId, userRole, roomId);
-      
-      if (!validation.valid) {
-        return; // Invalid room or no access
-      }
-      
-      // If student, check if admitted
+      const validation = await validateClassAccess(uid, role, roomId);
+      if (!validation.valid) return;
+
+      // Students must be admitted
       if (!validation.isTeacher) {
-        const isAdmitted = await redisClient.sIsMember(`admitted:${roomId}`, userId.toString());
-        if (!isAdmitted) return; // Not admitted
+        const isAdmitted = await redisClient.sIsMember(`admitted:${roomId}`, uid);
+        if (!isAdmitted) return;
       }
-      
+
       await callback(validation.isTeacher);
     } catch (err) {
-      console.error('Classroom socket error:', err);
+      console.error('[Classroom] socket error:', err.message);
     }
   };
 
-  socket.on('class:room-join', async (payload) => {
-    const { roomId, userId, userRole } = payload;
-    await validateAndExecute(roomId, userId, userRole, async () => {
-      // Join the socket room for classroom events
+  // ── Join classroom socket room ──────────────────────────────────────────────
+  socket.on('class:room-join', async ({ roomId }) => {
+    await validateAndExecute(roomId, async () => {
       socket.join(roomId);
-      
-      // Track on socket for cleanup
       socket.classroomRoomId = roomId;
-      socket.classroomUserId = userId;
+      socket.classroomUserId = uid;
 
-      // Sync raised hands on join
       const hands = await getRaisedHands(roomId);
       socket.emit('class:raised-hands-list', hands);
+
+      console.log(`[Classroom] user=${uid} role=${role} joined room=${roomId}`);
     });
   });
 
-  socket.on('class:raise-hand', async (payload) => {
-    const { roomId, userId, userRole } = payload;
-    await validateAndExecute(roomId, userId, userRole, async () => {
-      await addRaisedHand(roomId, userId);
-      // Track for disconnect cleanup
+  // ── Raise hand ─────────────────────────────────────────────────────────────
+  socket.on('class:raise-hand', async ({ roomId }) => {
+    await validateAndExecute(roomId, async () => {
+      await addRaisedHand(roomId, uid);
       socket.classroomRoomId = roomId;
-      socket.classroomUserId = userId;
-      
-      io.to(roomId).emit('class:hand-updated', { userId, action: 'raised' });
+      socket.classroomUserId = uid;
+      io.to(roomId).emit('class:hand-updated', { userId: uid, action: 'raised' });
     });
   });
 
-  socket.on('class:lower-hand', async (payload) => {
-    const { roomId, userId, userRole } = payload;
-    await validateAndExecute(roomId, userId, userRole, async () => {
-      await removeRaisedHand(roomId, userId);
-      io.to(roomId).emit('class:hand-updated', { userId, action: 'lowered' });
+  // ── Lower hand ─────────────────────────────────────────────────────────────
+  socket.on('class:lower-hand', async ({ roomId }) => {
+    await validateAndExecute(roomId, async () => {
+      await removeRaisedHand(roomId, uid);
+      io.to(roomId).emit('class:hand-updated', { userId: uid, action: 'lowered' });
     });
   });
 
-  socket.on('class:clear-hand', async (payload) => {
-    const { roomId, facultyId, userRole, targetUserId } = payload;
-    await validateAndExecute(roomId, facultyId, userRole, async (isTeacher) => {
-      if (!isTeacher) return; // Only faculty can clear hands
+  // ── Faculty clears a student's hand ────────────────────────────────────────
+  socket.on('class:clear-hand', async ({ roomId, targetUserId }) => {
+    await validateAndExecute(roomId, async (isTeacher) => {
+      if (!isTeacher) return; // server-side role check — payload role ignored
       await removeRaisedHand(roomId, targetUserId);
       io.to(roomId).emit('class:hand-updated', { userId: targetUserId, action: 'lowered' });
     });
   });
 
-  socket.on('class:get-raised-hands', async (payload) => {
-    const { roomId, userId, userRole } = payload;
-    await validateAndExecute(roomId, userId, userRole, async () => {
+  // ── Get current raised-hands list ──────────────────────────────────────────
+  socket.on('class:get-raised-hands', async ({ roomId }) => {
+    await validateAndExecute(roomId, async () => {
       const hands = await getRaisedHands(roomId);
       socket.emit('class:raised-hands-list', hands);
     });
   });
 
-  socket.on('class:reaction', async (payload) => {
-    const { roomId, userId, userRole, name, reaction } = payload;
-    
-    if (!ALLOWED_REACTIONS.includes(reaction)) return;
-    
-    await validateAndExecute(roomId, userId, userRole, async () => {
-      const allowed = await checkReactionRateLimit(roomId, userId);
-      if (!allowed) return; // Rate limited
-
-      // Broadcast reaction to the room
-      io.to(roomId).emit('class:reaction', { userId, name, reaction, timestamp: Date.now() });
+  // ── Send reaction ──────────────────────────────────────────────────────────
+  socket.on('class:reaction', async ({ roomId, reaction }) => {
+    if (!ALLOWED_REACTIONS.includes(reaction)) return; // allowlist check
+    await validateAndExecute(roomId, async () => {
+      const allowed = await checkReactionRateLimit(roomId, uid);
+      if (!allowed) return;
+      io.to(roomId).emit('class:reaction', { userId: uid, name, reaction, timestamp: Date.now() });
     });
   });
 
+  // ── Chat message ───────────────────────────────────────────────────────────
+  const MAX_MSG_LENGTH = 1000;
+
+  socket.on('class:chat-message', async ({ roomId, message }) => {
+    // 1. Validate the socket is in this room (set on class:room-join)
+    if (socket.classroomRoomId !== roomId) {
+      return socket.emit('class:chat-error', { code: 'CHAT_NOT_IN_ROOM' });
+    }
+
+    // 2. Validate message content
+    if (typeof message !== 'string' || !message.trim()) {
+      return socket.emit('class:chat-error', { code: 'CHAT_MESSAGE_EMPTY' });
+    }
+    const trimmed = message.trim();
+    if (trimmed.length > MAX_MSG_LENGTH) {
+      return socket.emit('class:chat-error', { code: 'CHAT_MESSAGE_TOO_LONG' });
+    }
+
+    await validateAndExecute(roomId, async () => {
+      // 3. Rate limit
+      const allowed = await checkChatRateLimit(roomId, uid);
+      if (!allowed) {
+        return socket.emit('class:chat-error', { code: 'CHAT_RATE_LIMITED' });
+      }
+
+      // 4. Build server-generated message — frontend identity fields are IGNORED
+      const chatMessage = {
+        id:        crypto.randomUUID(),
+        userId:    uid,
+        name:      name,
+        role:      role,
+        message:   trimmed,
+        timestamp: new Date().toISOString(),
+        roomId:    roomId
+      };
+
+      io.to(roomId).emit('class:chat-message', chatMessage);
+    });
+  });
+
+  // ── Cleanup on disconnect ──────────────────────────────────────────────────
   socket.on('disconnect', async () => {
     if (socket.classroomRoomId && socket.classroomUserId) {
       try {
         await removeRaisedHand(socket.classroomRoomId, socket.classroomUserId);
-        io.to(socket.classroomRoomId).emit('class:hand-updated', { userId: socket.classroomUserId, action: 'lowered' });
+        io.to(socket.classroomRoomId).emit('class:hand-updated', { 
+          userId: socket.classroomUserId, action: 'lowered' 
+        });
       } catch (err) {
-        console.error('Error cleaning up raised hand on disconnect:', err);
+        console.error('[Classroom] disconnect cleanup error:', err.message);
       }
     }
   });

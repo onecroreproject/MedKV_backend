@@ -28,6 +28,56 @@ const adminHandler = require('./src/socket/adminHandler');
 const admissionHandler = require('./src/socket/admissionHandler');
 const classroomHandler = require('./src/socket/classroomHandler');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Socket.IO Authentication Middleware
+// Uses the SAME JWT_SECRET and User model as auth.middleware.js (REST API).
+// The client must pass the token in socket.handshake.auth.token (Bearer optional).
+// ─────────────────────────────────────────────────────────────────────────────
+const jwt = require('jsonwebtoken');
+const User = require('./src/models/User.model');
+
+io.use(async (socket, next) => {
+  try {
+    const raw = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
+    if (!raw) {
+      return next(new Error('AUTH_MISSING_TOKEN'));
+    }
+
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return next(new Error('AUTH_INVALID_TOKEN'));
+    }
+
+    const user = await User.findById(decoded.id).select('name role isActive activeToken');
+    if (!user) {
+      return next(new Error('AUTH_USER_NOT_FOUND'));
+    }
+    if (!user.isActive) {
+      return next(new Error('AUTH_ACCOUNT_INACTIVE'));
+    }
+    // Session revocation — match the same check as auth.middleware.js
+    if (user.activeToken && user.activeToken !== token) {
+      return next(new Error('AUTH_SESSION_REVOKED'));
+    }
+
+    // Set verified identity on the socket — these are the ONLY trusted sources
+    socket.userId   = user._id.toString();
+    socket.userRole = user.role;      // 'Student' | 'Faculty' | 'Admin'
+    socket.userName = user.name;
+
+    // Safe log — no token, no secrets
+    console.log(`[SocketAuth] authenticated user=${socket.userId} role=${socket.userRole}`);
+    next();
+  } catch (err) {
+    console.error('[SocketAuth] middleware error:', err.message);
+    next(new Error('AUTH_SERVER_ERROR'));
+  }
+});
+
 // Expose globally for controllers/utils to emit events
 global.io = io;
 

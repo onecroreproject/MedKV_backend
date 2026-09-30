@@ -46,10 +46,22 @@ const checkReactionRateLimit = async (roomId, userId) => {
   return current <= 5;
 };
 
+// Rate Limiting Logic for Chat
+// 10 messages per 10 seconds per user per room
+const checkChatRateLimit = async (roomId, userId) => {
+  const key = `ratelimit:chat:${roomId}:${userId}`;
+  const current = await redisClient.incr(key);
+  if (current === 1) {
+    await redisClient.expire(key, 10); // 10 second window
+  }
+  return current <= 10;
+};
+
 module.exports = {
   addRaisedHand: addRaisedHandSimple,
   removeRaisedHand,
   getRaisedHands,
   clearAllRaisedHands,
-  checkReactionRateLimit
+  checkReactionRateLimit,
+  checkChatRateLimit
 };

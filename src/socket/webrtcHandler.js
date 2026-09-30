@@ -9,12 +9,16 @@ module.exports = (io, socket) => {
 
   // Join a WebRTC Room
   socket.on('join-room', async (payload) => {
-    const { roomId, userId, userRole, name } = payload;
+    const { roomId } = payload;
+
+    // Identity ALWAYS from socket (set by io.use() middleware — JWT-verified)
+    const userId   = socket.userId;
+    const userRole = socket.userRole;
+    const name     = socket.userName;
+
     socket.join(roomId);
     socket.roomId = roomId;
-    socket.userId = userId;
-    socket.userRole = userRole;
-    socket.userName = name;
+    // Note: socket.userId / socket.userRole / socket.userName already set by io.use()
 
     if (!activeRooms[roomId]) {
       activeRooms[roomId] = { teacher: null, students: {}, waiting: {}, admittedUsers: new Set(), teacherTimeout: null };
