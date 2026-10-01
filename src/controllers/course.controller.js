@@ -74,17 +74,19 @@ exports.getCourse = async (req, res) => {
     
     // Inject recordings into liveSessions so the frontend automatically displays them
     if (!courseObj.liveSessions) courseObj.liveSessions = [];
+    let sessionCounter = 1;
     recordings.forEach(rec => {
       // Don't duplicate if a liveSession already matches this recording title (manual entry)
       const exists = courseObj.liveSessions.some(ls => ls.title === rec.title && ls.sessionType === 'Recording');
       if (!exists && !rec.lesson) {
         courseObj.liveSessions.push({
           sessionType: 'Recording',
-          title: rec.title,
+          title: `Recorded Session ${sessionCounter}`,
           duration: rec.duration || 'Available',
           accessibility: 'Full Access',
           accessTerms: 'Available 24/7'
         });
+        sessionCounter++;
       }
     });
 
