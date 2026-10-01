@@ -81,7 +81,7 @@ exports.getCourse = async (req, res) => {
       if (!exists && !rec.lesson) {
         courseObj.liveSessions.push({
           sessionType: 'Recording',
-          title: `Recorded Session ${sessionCounter}`,
+          title: `${courseObj.title} - Session ${sessionCounter}`,
           duration: rec.duration || 'Available',
           accessibility: 'Full Access',
           accessTerms: 'Available 24/7'
