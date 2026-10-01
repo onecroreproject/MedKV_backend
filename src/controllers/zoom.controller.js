@@ -1,4 +1,7 @@
 const ZoomIntegration = require('../models/ZoomIntegration.model');
+const LiveClass = require('../models/LiveClass.model');
+const jwt = require('jsonwebtoken');
+const { getHostZak } = require('../services/zoom.service');
 
 // @desc    Redirect admin to Zoom for OAuth authorization
 // @route   GET /api/zoom/oauth/authorize
@@ -86,5 +89,95 @@ exports.callback = async (req, res) => {
   } catch (error) {
     console.error('Error in Zoom callback endpoint:', error.message);
     res.status(500).json({ success: false, message: 'Failed to process Zoom callback.' });
+  }
+};
+
+// @desc    Get Zoom SDK credentials for a live class
+// @route   GET /api/zoom/sdk-credentials/:liveClassId
+// @access  Private (Students, Faculty, Admin)
+exports.getSdkCredentials = async (req, res) => {
+  try {
+    const { liveClassId } = req.params;
+    const user = req.user;
+
+    const liveClass = await LiveClass.findById(liveClassId);
+    if (!liveClass || liveClass.meetingProvider !== 'zoom') {
+      return res.status(404).json({ success: false, message: 'Zoom Live Class not found.' });
+    }
+
+    // Determine host status
+    const isAssignedFaculty = liveClass.faculty.toString() === user._id.toString();
+    const isAdmin = user.role === 'Admin';
+    const isHost = isAssignedFaculty || isAdmin;
+
+    // Determine authorization
+    let isAuthorized = isHost;
+
+    if (!isHost && user.role.match(/student/i)) {
+      if (liveClass.accessControl === 'all') {
+        isAuthorized = true;
+      } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents.includes(user._id)) {
+        isAuthorized = true;
+      } else if (liveClass.accessControl === 'course') {
+        const isEnrolled = user.enrolledCourses.some(e => e.course.toString() === liveClass.course.toString());
+        if (isEnrolled) {
+          isAuthorized = true;
+        }
+      }
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to join this class.' });
+    }
+
+    const sdkKey = process.env.ZOOM_SDK_KEY;
+    const sdkSecret = process.env.ZOOM_SDK_SECRET;
+
+    if (!sdkKey || !sdkSecret) {
+      return res.status(500).json({ success: false, message: 'Zoom SDK credentials are not configured.' });
+    }
+
+    const meetingNumber = liveClass.zoomId;
+    const role = isHost ? 1 : 0;
+
+    const iat = Math.round(new Date().getTime() / 1000) - 30;
+    const exp = iat + 60 * 60 * 2; // 2 hours
+
+    const payload = {
+      sdkKey: sdkKey,
+      appKey: sdkKey, // for legacy compatibility
+      mn: meetingNumber,
+      role: role,
+      iat: iat,
+      exp: exp,
+      tokenExp: exp
+    };
+
+    const signature = jwt.sign(payload, sdkSecret, { header: { alg: 'HS256', typ: 'JWT' } });
+
+    const responsePayload = {
+      success: true,
+      signature: signature,
+      meetingNumber: meetingNumber,
+      passcode: liveClass.zoomPasscode,
+      userName: user.name,
+      userEmail: user.email,
+      sdkKey: sdkKey
+    };
+
+    if (isHost) {
+      // Get ZAK token
+      try {
+        const zak = await getHostZak(liveClass.hostZoomUserId || user.email);
+        responsePayload.zak = zak;
+      } catch (err) {
+        return res.status(400).json({ success: false, message: 'Assigned teacher is not connected to a Zoom account.' });
+      }
+    }
+
+    res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('Error getting Zoom SDK credentials:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 };

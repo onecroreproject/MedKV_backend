@@ -54,10 +54,16 @@ const liveClassSchema = new mongoose.Schema({
   zoomPasscode: {
     type: String,
   },
+  zoomStartUrl: {
+    type: String,
+  },
+  hostZoomUserId: {
+    type: String,
+  },
   meetingProvider: {
     type: String,
     enum: ['webrtc', 'zoom'],
-    default: 'webrtc'
+    default: 'zoom'
   },
   roomId: {
     type: String, // UUID for WebRTC rooms

@@ -5,6 +5,7 @@ const dispatcher = require('../services/notificationDispatcher');
 const { stopActiveRecording, activeRooms } = require('../socket/webrtcHandler');
 const { clearRoomModerationState } = require('../services/classroom.service');
 const { redisClient } = require('../config/redis');
+const { createZoomMeeting, updateZoomMeeting, deleteZoomMeeting } = require('../services/zoom.service');
 const generateGCalLink = (liveClass) => {
   try {
     const d = new Date(liveClass.date);
@@ -80,7 +81,19 @@ exports.getLiveClass = async (req, res) => {
 // @access  Private (Admin/Faculty)
 exports.createLiveClass = async (req, res) => {
   try {
-    // If not admin, maybe force faculty to be req.user.id
+    const meetingProvider = req.body.meetingProvider || 'zoom';
+    if (meetingProvider === 'zoom') {
+      const faculty = await User.findById(req.body.faculty);
+      if (!faculty) throw new Error('Invalid faculty assigned to class');
+      
+      const zoomMeeting = await createZoomMeeting(req.body, faculty.email);
+      req.body.zoomId = zoomMeeting.meetingId;
+      req.body.zoomPasscode = zoomMeeting.passcode;
+      req.body.zoomLink = zoomMeeting.joinUrl;
+      req.body.zoomStartUrl = zoomMeeting.startUrl;
+      req.body.hostZoomUserId = zoomMeeting.hostZoomUserId;
+    }
+
     const liveClass = await LiveClass.create(req.body);
 
     // Notify users based on access control
@@ -129,6 +142,27 @@ exports.updateLiveClass = async (req, res) => {
     const oldStatus = liveClass.status;
     const oldDate = liveClass.date;
     const oldTime = liveClass.time;
+
+    const targetProvider = req.body.meetingProvider !== undefined ? req.body.meetingProvider : liveClass.meetingProvider;
+    if (targetProvider === 'zoom') {
+      if (liveClass.meetingProvider !== 'zoom' || !liveClass.zoomId) {
+        // Switched from WebRTC to Zoom, create new meeting
+        const faculty = await User.findById(req.body.faculty || liveClass.faculty);
+        if (faculty) {
+           const zoomMeeting = await createZoomMeeting({ ...liveClass.toObject(), ...req.body }, faculty.email);
+           req.body.zoomId = zoomMeeting.meetingId;
+           req.body.zoomPasscode = zoomMeeting.passcode;
+           req.body.zoomLink = zoomMeeting.joinUrl;
+           req.body.zoomStartUrl = zoomMeeting.startUrl;
+           req.body.hostZoomUserId = zoomMeeting.hostZoomUserId;
+        }
+      } else if (req.body.date || req.body.time || req.body.duration || req.body.title) {
+        // Update existing zoom meeting if scheduling details changed
+        await updateZoomMeeting(liveClass.zoomId, { ...liveClass.toObject(), ...req.body }).catch(err => {
+          console.error("Warning: Zoom update failed", err);
+        });
+      }
+    }
 
     liveClass = await LiveClass.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -223,6 +257,10 @@ exports.deleteLiveClass = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Class not found' });
     }
     
+    if (liveClass.meetingProvider === 'zoom' && liveClass.zoomId) {
+      await deleteZoomMeeting(liveClass.zoomId).catch(err => console.error("Could not delete zoom meeting:", err));
+    }
+
     await liveClass.deleteOne();
     
     if (global.io) {
