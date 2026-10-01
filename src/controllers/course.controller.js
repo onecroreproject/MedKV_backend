@@ -33,7 +33,8 @@ exports.getCourses = async (req, res) => {
 
     const coursesWithStudentCount = await Promise.all(courses.map(async (course) => {
       const studentCount = await User.countDocuments({ 'enrolledCourses.course': course._id });
-      return { ...course.toObject(), studentCount };
+      const recordingsCount = await Recording.countDocuments({ course: course._id, isPublished: true });
+      return { ...course.toObject(), studentCount, hasRecordings: recordingsCount > 0, recordingsCount };
     }));
 
     res.status(200).json({ success: true, count: coursesWithStudentCount.length, data: coursesWithStudentCount });
@@ -66,7 +67,28 @@ exports.getCourse = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
-    res.status(200).json({ success: true, data: course });
+    const courseObj = course.toObject();
+    
+    // Fetch standalone recordings for this course
+    const recordings = await Recording.find({ course: course._id, isPublished: true });
+    
+    // Inject recordings into liveSessions so the frontend automatically displays them
+    if (!courseObj.liveSessions) courseObj.liveSessions = [];
+    recordings.forEach(rec => {
+      // Don't duplicate if a liveSession already matches this recording title (manual entry)
+      const exists = courseObj.liveSessions.some(ls => ls.title === rec.title && ls.sessionType === 'Recording');
+      if (!exists && !rec.lesson) {
+        courseObj.liveSessions.push({
+          sessionType: 'Recording',
+          title: rec.title,
+          duration: rec.duration || 'Available',
+          accessibility: 'Full Access',
+          accessTerms: 'Available 24/7'
+        });
+      }
+    });
+
+    res.status(200).json({ success: true, data: courseObj });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
