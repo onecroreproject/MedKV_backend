@@ -35,14 +35,11 @@ const createLiveKitToken = async (req, res) => {
       isAuthorized = true;
       isTeacher = true;
     } else if (req.user.role.toLowerCase() === 'faculty' || req.user.role.toLowerCase() === 'teacher') {
-      if (liveClass.faculty.toString() === userId.toString()) {
-        isAuthorized = true;
-        isTeacher = true;
-        console.log(`[LIFECYCLE: LIVEKIT TOKEN] Faculty authorized as teacher`);
-      } else {
-        console.warn(`[LIFECYCLE: LIVEKIT TOKEN] Faculty not authorized to host this class`);
-        return res.status(403).json({ message: 'Not authorized to host this class' });
-      }
+      // Allow any faculty to host/join the class. 
+      // If we strictly check liveClass.faculty === userId, substitute teachers will be locked out.
+      isAuthorized = true;
+      isTeacher = true;
+      console.log(`[LIFECYCLE: LIVEKIT TOKEN] Faculty authorized as teacher (User ID: ${userId}, Assigned Faculty: ${liveClass.faculty})`);
     } else {
       // Student check
       if (liveClass.accessControl === 'all') {
