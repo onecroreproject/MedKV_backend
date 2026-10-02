@@ -78,8 +78,11 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
     }
   };
 
-  // Try to create meeting for the faculty user, fallback to 'me' if user doesn't exist in the Zoom account
-  let userId = facultyEmail || 'me';
+  // Ensure we don't fallback to 'me'. Use exact facultyEmail.
+  let userId = facultyEmail;
+  if (!userId) {
+    throw new Error('Assigned faculty email is missing. Cannot create Zoom meeting.');
+  }
   
   try {
     let response = await fetch(`https://api.zoom.us/v2/users/${userId}/meetings`, {
@@ -93,18 +96,8 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
 
     if (!response.ok) {
       const data = await response.json();
-      if (data.code === 1001 && userId !== 'me') {
-        // User not found, fallback to 'me'
-        console.warn(`Zoom user ${facultyEmail} not found, falling back to 'me'`);
-        userId = 'me';
-        response = await fetch(`https://api.zoom.us/v2/users/${userId}/meetings`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        });
+      if (data.code === 1001) {
+        throw new Error('Assigned faculty is not connected to the Academy Zoom account.');
       } else {
         throw new Error(`Failed to create Zoom meeting: ${data.message || 'Unknown error'}`);
       }

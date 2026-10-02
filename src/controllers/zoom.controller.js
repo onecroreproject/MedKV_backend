@@ -517,15 +517,15 @@ exports.endMeeting = async (req, res) => {
     }
 
     if (!liveClass.zoomId) {
-      return res.status(400).json({ success: false, message: 'Zoom ID not found for this class' });
-    }
-
-    // Call the service to forcefully end the meeting for all via Zoom API
-    const { endZoomMeeting } = require('../services/zoom.service');
-    try {
-      await endZoomMeeting(liveClass.zoomId);
-    } catch (zoomErr) {
-      console.warn(`[Zoom] Best-effort end failed for ${liveClass.zoomId}, but updating local status to Completed anyway.`, zoomErr.message);
+      console.warn(`[Zoom] zoomId is missing for class ${liveClass._id}. Skipping Zoom API termination, but will still mark local status as Completed.`);
+    } else {
+      // Call the service to forcefully end the meeting for all via Zoom API
+      const { endZoomMeeting } = require('../services/zoom.service');
+      try {
+        await endZoomMeeting(liveClass.zoomId);
+      } catch (zoomErr) {
+        console.warn(`[Zoom] Best-effort end failed for ${liveClass.zoomId}, but updating local status to Completed anyway.`, zoomErr.message);
+      }
     }
 
     // Proactively update the status to Completed immediately for snappy UX

@@ -93,11 +93,11 @@ module.exports = {
   // Clean up all moderation keys for a room when class ends
   clearRoomModerationState: async (roomId) => {
     const pattern = `moderation:*:${roomId}:*`;
-    let cursor = 0;
+    let cursor = '0'; // MUST be a string for node-redis v4 to avoid TypeError
     do {
       const result = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
-      cursor = result.cursor;
-      if (result.keys.length > 0) await redisClient.del(result.keys);
-    } while (cursor !== 0);
+      cursor = String(result.cursor);
+      if (result.keys && result.keys.length > 0) await redisClient.del(result.keys);
+    } while (cursor !== '0');
   },
 };
