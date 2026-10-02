@@ -44,6 +44,10 @@ const settingsSchema = new mongoose.Schema({
     privacyPolicy: { type: String, default: 'Privacy policy goes here...' },
     refundPolicy: { type: String, default: 'Refund policy goes here...' },
   },
+  attendance: {
+    presentThreshold: { type: Number, default: 75 }, // Percentage of class duration to be considered 'Present'
+    partialThreshold: { type: Number, default: 30 }, // Percentage of class duration to be considered 'Partial'
+  },
   banners: [{
     imageUrl: { type: String, required: true },
     title: { type: String, default: '' },

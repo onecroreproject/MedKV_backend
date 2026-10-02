@@ -29,6 +29,23 @@ const classRecordingSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  recordingProvider: {
+    type: String,
+    enum: ['webrtc', 'zoom'],
+    default: 'webrtc'
+  },
+  zoomMeetingId: {
+    type: String,
+  },
+  zoomRecordingId: {
+    type: String,
+  },
+  playbackUrl: {
+    type: String,
+  },
+  downloadUrl: {
+    type: String,
+  },
   egressId: {
     type: String,
     unique: true,
@@ -76,5 +93,8 @@ const classRecordingSchema = new mongoose.Schema({
 }, {
   timestamps: true,
 });
+
+// Ensure we don't create duplicate recordings for the same Zoom Recording UUID
+classRecordingSchema.index({ zoomRecordingId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('ClassRecording', classRecordingSchema);

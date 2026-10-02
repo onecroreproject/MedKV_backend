@@ -71,7 +71,8 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
       participant_video: false,
       join_before_host: false,
       mute_upon_entry: true,
-      waiting_room: true
+      waiting_room: true,
+      auto_recording: liveClass.settings?.recording ? 'cloud' : 'none'
     }
   };
 
@@ -132,6 +133,9 @@ exports.updateZoomMeeting = async (meetingId, liveClass) => {
     topic: liveClass.title,
     start_time: startTime,
     duration: liveClass.duration || 60,
+    settings: {
+      auto_recording: liveClass.settings?.recording ? 'cloud' : 'none'
+    }
   };
 
   const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}`, {

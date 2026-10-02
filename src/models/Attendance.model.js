@@ -21,9 +21,22 @@ const attendanceSchema = new mongoose.Schema({
     type: Number, // duration in minutes
     default: 0
   },
+  provider: {
+    type: String,
+    enum: ['webrtc', 'zoom'],
+    default: 'webrtc'
+  },
+  zoomMeetingId: {
+    type: String,
+  },
+  joinSessions: [{
+    joinTime: Date,
+    leaveTime: Date,
+    duration: Number
+  }],
   status: {
     type: String,
-    enum: ['Present', 'Absent', 'Late Join'],
+    enum: ['Present', 'Absent', 'Late Join', 'Partial'],
     default: 'Absent'
   },
   chatMessages: {
@@ -42,7 +55,7 @@ const attendanceSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Prevent multiple attendance records for the same student in the same class
-attendanceSchema.index({ liveClass: 1, student: 1 }, { unique: true });
+// Prevent multiple attendance records for the same student in the same class (or specific zoom meeting)
+attendanceSchema.index({ liveClass: 1, student: 1, zoomMeetingId: 1 }, { unique: true });
 
 module.exports = mongoose.model('Attendance', attendanceSchema);

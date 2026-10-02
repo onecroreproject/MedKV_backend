@@ -110,4 +110,7 @@ const liveClassSchema = new mongoose.Schema({
   timestamps: true,
 });
 
+// Index to speed up webhook lookups by Zoom Meeting ID
+liveClassSchema.index({ zoomId: 1 }, { sparse: true });
+
 module.exports = mongoose.model('LiveClass', liveClassSchema);

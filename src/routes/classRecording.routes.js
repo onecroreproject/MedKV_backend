@@ -34,9 +34,9 @@ router.post('/resume', authorize('Admin', 'Faculty'), resumeRecording);
 router.post('/stop', authorize('Admin', 'Faculty'), stopRecording);
 router.get('/status/:roomName', authorize('Admin', 'Faculty'), getRecordingStatus);
 
-// Stream and download — Admin and Faculty (Faculty auth is enforced in controller)
-router.get('/:id/stream', authorize('Admin', 'Faculty'), streamRecording);
-router.get('/:id/download', authorize('Admin', 'Faculty'), downloadRecording);
+// Stream and download — Accessible to enrolled students as well
+router.get('/:id/stream', streamRecording);
+router.get('/:id/download', downloadRecording);
 
 // Rest are Admin only
 router.use(authorize('Admin'));

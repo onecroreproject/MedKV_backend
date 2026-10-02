@@ -906,7 +906,61 @@ exports.deleteRecording = async (req, res) => {
 exports.streamRecording = async (req, res) => {
   try {
     const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
+    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
+    
+    // Security Audit: Fix IDOR vulnerability - Check if student is authorized to view this recording
+    if (req.user.role.match(/student/i)) {
+      const LiveClass = require('../models/LiveClass.model');
+      const liveClass = await LiveClass.findOne({ _id: recording.roomName }); // We know roomName = LiveClass ID for Zoom classes
+      
+      let isAuthorized = false;
+      if (!liveClass) {
+        // Fallback: If no live class found, check course enrollment directly if course exists on recording
+        if (recording.course && req.user.enrolledCourses.some(e => e.course.toString() === recording.course.toString())) {
+          isAuthorized = true;
+        }
+      } else {
+        if (liveClass.accessControl === 'all') {
+          isAuthorized = true;
+        } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents.includes(req.user._id)) {
+          isAuthorized = true;
+        } else if (liveClass.accessControl === 'course') {
+          const isEnrolled = req.user.enrolledCourses.some(e => e.course.toString() === liveClass.course.toString());
+          if (isEnrolled) isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to access this recording.' });
+      }
+    }
+
+    if (recording.recordingProvider === 'zoom') {
+      const zoomUrl = recording.downloadUrl;
+      if (!zoomUrl) return res.status(404).json({ success: false, message: 'Zoom video URL not available' });
+      
+      const { getValidToken } = require('../services/zoom.service');
+      const token = await getValidToken();
+      
+      const fetchHeaders = { 'Authorization': `Bearer ${token}` };
+      if (req.headers.range) {
+        fetchHeaders['Range'] = req.headers.range;
+      }
+      
+      const zoomRes = await fetch(zoomUrl, { headers: fetchHeaders });
+      res.status(zoomRes.status);
+      
+      zoomRes.headers.forEach((value, name) => {
+        if (name.toLowerCase() !== 'content-disposition') {
+          res.setHeader(name, value);
+        }
+      });
+      
+      const { Readable } = require('stream');
+      return Readable.fromWeb(zoomRes.body).pipe(res);
+    }
+
+    if (!recording.filePath) return res.status(404).json({ success: false, message: 'Recording not finalized' });
     
     const fullPath = path.resolve(recording.filePath);
     if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
@@ -940,7 +994,51 @@ exports.streamRecording = async (req, res) => {
 exports.downloadRecording = async (req, res) => {
   try {
     const recording = await ClassRecording.findById(req.params.id);
-    if (!recording || !recording.filePath) return res.status(404).json({ success: false, message: 'Recording not found or not finalized' });
+    if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
+    
+    // Security Audit: Fix IDOR vulnerability - Check if student is authorized to download this recording
+    if (req.user.role.match(/student/i)) {
+      const LiveClass = require('../models/LiveClass.model');
+      const liveClass = await LiveClass.findOne({ _id: recording.roomName });
+      
+      let isAuthorized = false;
+      if (!liveClass) {
+        if (recording.course && req.user.enrolledCourses.some(e => e.course.toString() === recording.course.toString())) {
+          isAuthorized = true;
+        }
+      } else {
+        if (liveClass.accessControl === 'all') {
+          isAuthorized = true;
+        } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents.includes(req.user._id)) {
+          isAuthorized = true;
+        } else if (liveClass.accessControl === 'course') {
+          const isEnrolled = req.user.enrolledCourses.some(e => e.course.toString() === liveClass.course.toString());
+          if (isEnrolled) isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({ success: false, message: 'You are not authorized to download this recording.' });
+      }
+    }
+
+    if (recording.recordingProvider === 'zoom') {
+      const zoomUrl = recording.downloadUrl;
+      if (!zoomUrl) return res.status(404).json({ success: false, message: 'Zoom video URL not available' });
+      
+      const { getValidToken } = require('../services/zoom.service');
+      const token = await getValidToken();
+      
+      const zoomRes = await fetch(zoomUrl, { headers: { 'Authorization': `Bearer ${token}` } });
+      
+      res.setHeader('Content-Disposition', `attachment; filename="${recording.title ? recording.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'recording'}.mp4"`);
+      res.setHeader('Content-Type', 'video/mp4');
+      
+      const { Readable } = require('stream');
+      return Readable.fromWeb(zoomRes.body).pipe(res);
+    }
+
+    if (!recording.filePath) return res.status(404).json({ success: false, message: 'Recording not finalized' });
     
     const fullPath = path.resolve(recording.filePath);
     if (!fullPath.startsWith(path.resolve(EGRESS_DIR))) return res.status(403).json({ success: false, message: 'Invalid path' });
