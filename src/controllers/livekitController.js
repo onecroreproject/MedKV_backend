@@ -107,8 +107,8 @@ const createLiveKitToken = async (req, res) => {
     at.addGrant(grants);
 
     const token = await at.toJwt();
-    console.log(`[LIFECYCLE: LIVEKIT TOKEN] Token successfully generated for ${participantName}`);
-    res.status(200).json({ token });
+    console.log(`[LIFECYCLE: LIVEKIT TOKEN] Token successfully generated for ${participantName} isTeacher=${isTeacher}`);
+    res.status(200).json({ token, isTeacher });
   } catch (error) {
     console.error(`[LIFECYCLE: LIVEKIT TOKEN] Error generating LiveKit token:`, error);
     res.status(500).json({ message: 'Failed to generate token' });

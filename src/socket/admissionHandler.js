@@ -84,25 +84,37 @@ module.exports = (io, socket) => {
   socket.on('class:admit-student', async (payload) => {
     try {
       const { roomId, targetUserId } = payload;
+      const targetStr = String(targetUserId);
+      console.log(`[ADMISSION] class:admit-student received faculty=${uid} role=${role} targetUserId=${targetStr} roomId=${roomId}`);
+
       // Authorisation: use socket.userId (faculty), not payload.facultyId
       const validation = await validateClassAccess(uid, role, roomId);
+      console.log(`[ADMISSION] admit validation:`, { valid: validation.valid, isTeacher: validation.isTeacher });
       
-      if (!validation.valid || !validation.isTeacher) return;
+      if (!validation.valid || !validation.isTeacher) {
+        console.warn(`[ADMISSION] admit-student BLOCKED - not authorized faculty=${uid} role=${role}`);
+        return;
+      }
 
       const waitingStudents = await getWaitingStudents(roomId);
-      const student = waitingStudents.find(s => s.userId === targetUserId);
+      console.log(`[ADMISSION] waiting list:`, waitingStudents.map(s => ({ userId: s.userId, name: s.name })));
+
+      // Normalize comparison: compare as strings
+      const student = waitingStudents.find(s => String(s.userId) === targetStr);
       
       if (student) {
-        await removeStudentFromWaitingRoom(roomId, targetUserId);
+        await removeStudentFromWaitingRoom(roomId, targetStr);
         
         const { redisClient } = require('../config/redis');
-        await redisClient.sAdd(`admitted:${roomId}`, targetUserId.toString());
+        await redisClient.sAdd(`admitted:${roomId}`, targetStr);
         await redisClient.expire(`admitted:${roomId}`, 4 * 3600);
 
         io.to(student.socketId).emit('class:admitted');
-        io.to(roomId).emit('class:student-left-waiting', { userId: targetUserId });
+        io.to(roomId).emit('class:student-left-waiting', { userId: targetStr });
 
-        console.log(`[Admission] admitted user=${targetUserId} by faculty=${uid} room=${roomId}`);
+        console.log(`[ADMISSION] ✅ admitted user=${targetStr} name=${student.name} by faculty=${uid} room=${roomId}`);
+      } else {
+        console.warn(`[ADMISSION] ⚠️ student not found in waiting list targetUserId=${targetStr}`);
       }
     } catch (err) {
       console.error('[Admission] admit-student error:', err.message);
@@ -113,19 +125,26 @@ module.exports = (io, socket) => {
   socket.on('class:reject-student', async (payload) => {
     try {
       const { roomId, targetUserId } = payload;
+      const targetStr = String(targetUserId);
+      console.log(`[ADMISSION] class:reject-student received faculty=${uid} role=${role} targetUserId=${targetStr} roomId=${roomId}`);
+
       const validation = await validateClassAccess(uid, role, roomId);
-      
-      if (!validation.valid || !validation.isTeacher) return;
+      if (!validation.valid || !validation.isTeacher) {
+        console.warn(`[ADMISSION] reject-student BLOCKED - not authorized faculty=${uid} role=${role}`);
+        return;
+      }
 
       const waitingStudents = await getWaitingStudents(roomId);
-      const student = waitingStudents.find(s => s.userId === targetUserId);
+      // Normalize comparison: compare as strings
+      const student = waitingStudents.find(s => String(s.userId) === targetStr);
       
       if (student) {
-        await removeStudentFromWaitingRoom(roomId, targetUserId);
+        await removeStudentFromWaitingRoom(roomId, targetStr);
         io.to(student.socketId).emit('class:rejected', { message: 'Your request to join was not approved.' });
-        io.to(roomId).emit('class:student-left-waiting', { userId: targetUserId });
-
-        console.log(`[Admission] rejected user=${targetUserId} by faculty=${uid} room=${roomId}`);
+        io.to(roomId).emit('class:student-left-waiting', { userId: targetStr });
+        console.log(`[ADMISSION] ✅ rejected user=${targetStr} name=${student.name} by faculty=${uid} room=${roomId}`);
+      } else {
+        console.warn(`[ADMISSION] ⚠️ student not found in waiting list targetUserId=${targetStr}`);
       }
     } catch (err) {
       console.error('[Admission] reject-student error:', err.message);
