@@ -86,7 +86,7 @@ exports.createLiveClass = async (req, res) => {
       const faculty = await User.findById(req.body.faculty);
       if (!faculty) throw new Error('Invalid faculty assigned to class');
       
-      const zoomMeeting = await createZoomMeeting(req.body, faculty.email);
+      const zoomMeeting = await createZoomMeeting(req.body);
       req.body.zoomId = zoomMeeting.meetingId;
       req.body.zoomPasscode = zoomMeeting.passcode;
       req.body.zoomLink = zoomMeeting.joinUrl;
@@ -149,7 +149,7 @@ exports.updateLiveClass = async (req, res) => {
         // Switched from WebRTC to Zoom, create new meeting
         const faculty = await User.findById(req.body.faculty || liveClass.faculty);
         if (faculty) {
-           const zoomMeeting = await createZoomMeeting({ ...liveClass.toObject(), ...req.body }, faculty.email);
+           const zoomMeeting = await createZoomMeeting({ ...liveClass.toObject(), ...req.body });
            req.body.zoomId = zoomMeeting.meetingId;
            req.body.zoomPasscode = zoomMeeting.passcode;
            req.body.zoomLink = zoomMeeting.joinUrl;

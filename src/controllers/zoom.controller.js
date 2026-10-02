@@ -196,12 +196,12 @@ exports.getSdkCredentials = async (req, res) => {
     };
 
     if (isHost) {
-      // Get ZAK token
+      // Get ZAK token using the Academy's host ID or 'me'
       try {
-        const zak = await getHostZak(liveClass.hostZoomUserId || user.email);
+        const zak = await getHostZak(liveClass.hostZoomUserId || 'me');
         responsePayload.zak = zak;
       } catch (err) {
-        return res.status(400).json({ success: false, message: 'Assigned teacher is not connected to a Zoom account.' });
+        return res.status(400).json({ success: false, message: 'Failed to authenticate Admin with the Academy Zoom account.' });
       }
     }
 

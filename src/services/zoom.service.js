@@ -58,7 +58,7 @@ const getStartTime = (dateStr, timeStr) => {
   return d.toISOString();
 };
 
-exports.createZoomMeeting = async (liveClass, facultyEmail) => {
+exports.createZoomMeeting = async (liveClass) => {
   const token = await getValidToken();
   const startTime = getStartTime(liveClass.date, liveClass.time);
 
@@ -78,11 +78,8 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
     }
   };
 
-  // Ensure we don't fallback to 'me'. Use exact facultyEmail.
-  let userId = facultyEmail;
-  if (!userId) {
-    throw new Error('Assigned faculty email is missing. Cannot create Zoom meeting.');
-  }
+  // Explicitly use the authenticated Academy Zoom account to create the meeting
+  let userId = 'me';
   
   try {
     let response = await fetch(`https://api.zoom.us/v2/users/${userId}/meetings`, {
@@ -96,11 +93,7 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
 
     if (!response.ok) {
       const data = await response.json();
-      if (data.code === 1001) {
-        throw new Error('Assigned faculty is not connected to the Academy Zoom account.');
-      } else {
-        throw new Error(`Failed to create Zoom meeting: ${data.message || 'Unknown error'}`);
-      }
+      throw new Error(`Failed to create Zoom meeting: ${data.message || 'Unknown error'}`);
     }
 
     const meetingData = await response.json();
