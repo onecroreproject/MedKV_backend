@@ -166,13 +166,15 @@ exports.getSdkCredentials = async (req, res) => {
       return res.status(403).json({ success: false, message: 'You are not authorized to join this class.' });
     }
 
-    const sdkKey = process.env.ZOOM_SDK_KEY;
-    const sdkSecret = process.env.ZOOM_SDK_SECRET;
+    const clientId = process.env.ZOOM_CLIENT_ID;
+    const clientSecret = process.env.ZOOM_CLIENT_SECRET;
 
-    if (!sdkKey || !sdkSecret) {
-      console.error(`[Zoom SDK] ZOOM_SDK_KEY or ZOOM_SDK_SECRET is missing from environment variables.`);
-      return res.status(500).json({ success: false, message: 'Zoom SDK credentials are not configured on the server.' });
+    if (!clientId || !clientSecret) {
+      console.error(`[Zoom SDK] ZOOM_CLIENT_ID or ZOOM_CLIENT_SECRET is missing from environment variables.`);
+      return res.status(500).json({ success: false, message: 'Zoom Client credentials are not configured on the server.' });
     }
+    console.log(`[Zoom SDK] Client ID configured: true`);
+    console.log(`[Zoom SDK] Client Secret configured: true`);
 
     const meetingNumber = liveClass.zoomId;
     const role = isHost ? 1 : 0;
@@ -181,8 +183,7 @@ exports.getSdkCredentials = async (req, res) => {
     const exp = iat + 60 * 60 * 2; // 2 hours
 
     const payload = {
-      sdkKey: sdkKey,
-      appKey: sdkKey, // for legacy compatibility
+      appKey: clientId,
       mn: meetingNumber,
       role: role,
       iat: iat,
@@ -192,7 +193,7 @@ exports.getSdkCredentials = async (req, res) => {
 
     let signature;
     try {
-      signature = jwt.sign(payload, sdkSecret, { header: { alg: 'HS256', typ: 'JWT' } });
+      signature = jwt.sign(payload, clientSecret, { header: { alg: 'HS256', typ: 'JWT' } });
       console.log(`[Zoom SDK] SDK JWT generated: true`);
       console.log(`[Zoom SDK] role: ${role}`);
       console.log(`[Zoom SDK] meetingNumber exists: true`);
@@ -209,7 +210,7 @@ exports.getSdkCredentials = async (req, res) => {
       userName: user.name,
       userEmail: user.email,
       customerKey: user._id.toString(), // Used to reliably identify student in webhook
-      sdkKey: sdkKey
+      appKey: clientId
     };
 
     if (isHost) {
