@@ -114,6 +114,12 @@ server.on('error', (e) => {
 
 server.listen(PORT, () => {
   console.log(`Server is running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  
+  // Start periodic Zoom stale class reconciliation worker (runs every 15 minutes)
+  const { reconcileStaleZoomClasses } = require('./src/services/zoom.service');
+  setInterval(() => {
+    reconcileStaleZoomClasses().catch(console.error);
+  }, 15 * 60 * 1000); // 15 minutes
 });
 
 // Handle unhandled promise rejections

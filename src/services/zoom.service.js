@@ -1,4 +1,5 @@
 const ZoomIntegration = require('../models/ZoomIntegration.model');
+const LiveClass = require('../models/LiveClass.model');
 
 // Helper to get and refresh token if needed
 const getValidToken = async () => {
@@ -188,4 +189,68 @@ exports.getHostZak = async (userId) => {
   
   const data = await response.json();
   return data.token;
+};
+
+exports.reconcileStaleZoomClasses = async () => {
+  try {
+    // Find all 'Live Now' Zoom classes that started more than 3 hours ago (or scheduled to end more than 2 hours ago)
+    const staleThreshold = new Date(Date.now() - 3 * 60 * 60 * 1000); // 3 hours ago
+    
+    const staleClasses = await LiveClass.find({
+      meetingProvider: 'zoom',
+      status: 'Live Now',
+      $or: [
+        { startedAt: { $lt: staleThreshold } },
+        { date: { $lt: staleThreshold } }
+      ]
+    });
+
+    if (staleClasses.length === 0) return;
+
+    console.log(`[Zoom Recon] Found ${staleClasses.length} potentially stale Zoom classes.`);
+    const token = await getValidToken();
+
+    for (const liveClass of staleClasses) {
+      if (!liveClass.zoomId) continue;
+      
+      try {
+        const response = await fetch(`https://api.zoom.us/v2/meetings/${liveClass.zoomId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // status enum: waiting, started, finished
+          if (data.status === 'finished') {
+            console.log(`[Zoom Recon] Reconciling stale class ${liveClass._id} to Completed.`);
+            liveClass.status = 'Completed';
+            liveClass.roomStatus = 'ended';
+            liveClass.endedAt = new Date();
+            await liveClass.save();
+            
+            if (global.io) {
+              global.io.emit('liveClassUpdate', liveClass);
+            }
+          } else if (data.status === 'started') {
+            console.log(`[Zoom Recon] Class ${liveClass._id} is legitimately still active.`);
+          }
+        } else if (response.status === 404 || response.status === 400) {
+           // If meeting doesn't exist anymore or expired, mark completed
+           console.log(`[Zoom Recon] Meeting ${liveClass.zoomId} not found. Reconciling to Completed.`);
+           liveClass.status = 'Completed';
+           liveClass.roomStatus = 'ended';
+           liveClass.endedAt = new Date();
+           await liveClass.save();
+           
+           if (global.io) {
+             global.io.emit('liveClassUpdate', liveClass);
+           }
+        }
+      } catch (err) {
+        console.error(`[Zoom Recon] Error checking meeting ${liveClass.zoomId}:`, err.message);
+      }
+    }
+  } catch (error) {
+    console.error('[Zoom Recon] General reconciliation error:', error.message);
+  }
 };
