@@ -96,7 +96,9 @@ app.use('/api/v1/upload', require('./src/routes/upload.routes'));
 app.use('/api/v1/dashboard', require('./src/routes/dashboard.routes'));
 app.use('/api/v1/newsletter', require('./src/routes/newsletter.routes'));
 app.use('/api/v1/developer', require('./src/routes/developer.routes'));
-app.use('/api/zoom', require('./src/routes/zoom.routes'));
+app.use('/api/zoom', require('./src/routes/zoom.routes')); // Preserved for external Zoom Webhooks
+app.use('/api/v1/zoom', require('./src/routes/zoom.routes')); // For internal frontend Axios requests
+
 
 // Base route
 app.get('/', (req, res) => {
