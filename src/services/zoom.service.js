@@ -274,3 +274,5 @@ exports.endZoomMeeting = async (meetingId) => {
     throw error;
   }
 };
+
+exports.getValidToken = getValidToken;
