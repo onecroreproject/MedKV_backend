@@ -27,7 +27,8 @@ exports.authorize = (req, res) => {
 
     const zoomAuthUrl = `https://zoom.us/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${stateToken}`;
     
-    res.redirect(zoomAuthUrl);
+    // Return the URL as JSON since this is called via authenticated Axios
+    res.json({ success: true, url: zoomAuthUrl });
   } catch (error) {
     console.error('Error in Zoom authorize endpoint:', error.message);
     res.status(500).json({ success: false, message: 'Failed to start Zoom authorization.' });
