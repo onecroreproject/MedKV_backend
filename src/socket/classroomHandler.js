@@ -289,14 +289,17 @@ module.exports = (io, socket) => {
 
   // ── Student: request to enable camera ──────────────────────────────────────
   socket.on('class:request-camera', async ({ roomId }) => {
+    console.log(`[Classroom] Received class:request-camera from user=${uid}`);
     await validateAndExecute(roomId, async (isTeacher) => {
       if (isTeacher) return;
       const isCamDisabled = await isModerationCameraDisabled(roomId, uid);
+      console.log(`[Classroom] isCamDisabled=${isCamDisabled} for user=${uid}`);
       if (!isCamDisabled) return;
       io.to(roomId).emit('class:camera-request', {
         roomId, userId: uid, name,
         timestamp: new Date().toISOString(),
       });
+      console.log(`[Classroom] Emitted class:camera-request for user=${uid}`);
     });
   });
 
