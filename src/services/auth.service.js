@@ -30,8 +30,12 @@ exports.loginUser = async (email, password, requiredRole, clientInfo) => {
     throw new Error('Email not registered');
   }
 
-  if (requiredRole && user.role !== requiredRole) {
-    throw new Error(`Access denied. Must be a ${requiredRole} to access this portal.`);
+  if (requiredRole) {
+    if (requiredRole === 'Student' && (user.role === 'Faculty' || user.role === 'Admin')) {
+      // Allow Faculty and Admin to log in to the student portal
+    } else if (user.role !== requiredRole) {
+      throw new Error(`Access denied. Must be a ${requiredRole} to access this portal.`);
+    }
   }
 
   const isMatch = await user.matchPassword(password);

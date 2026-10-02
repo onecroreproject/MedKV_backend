@@ -9,7 +9,7 @@ mongoose.connect(uri)
     const db = mongoose.connection.db;
     const usersCollection = db.collection('users');
 
-    const emailsToUpdate = ['krishna700011@gmail.com', 'sanjayp_yadava@yahoo.co.in'];
+    const emailsToUpdate = ['suriya.dlktech@gmail.com'];
 
     const result = await usersCollection.updateMany(
       { email: { $in: emailsToUpdate } },
