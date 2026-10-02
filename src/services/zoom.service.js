@@ -72,7 +72,8 @@ exports.createZoomMeeting = async (liveClass, facultyEmail) => {
       join_before_host: false,
       mute_upon_entry: true,
       waiting_room: true,
-      auto_recording: liveClass.settings?.recording ? 'cloud' : 'none'
+      auto_recording: 'none', 
+      disable_recording_control: 'none' 
     }
   };
 
@@ -134,7 +135,8 @@ exports.updateZoomMeeting = async (meetingId, liveClass) => {
     start_time: startTime,
     duration: liveClass.duration || 60,
     settings: {
-      auto_recording: liveClass.settings?.recording ? 'cloud' : 'none'
+      auto_recording: 'none',
+      disable_recording_control: 'none'
     }
   };
 

@@ -339,16 +339,30 @@ exports.webhook = async (req, res) => {
         if (!liveClass.startedAt) liveClass.startedAt = new Date(payload.object.start_time);
         await liveClass.save();
         console.log(`Webhook: Meeting Started for Class ${liveClass.title}`);
+        
+        if (global.io) {
+          global.io.emit('liveClassUpdate', liveClass);
+        }
       }
     } else if (event === 'meeting.ended') {
+      console.log('Webhook: Received meeting.ended payload:', JSON.stringify(payload, null, 2));
       const meetingId = payload.object.id.toString();
+      console.log(`Webhook: Extracted Zoom Meeting ID: ${meetingId}`);
+      
       const liveClass = await LiveClass.findOne({ zoomId: meetingId }).sort({ date: -1 });
       if (liveClass) {
+        console.log(`Webhook: Found corresponding LiveClass: ${liveClass._id} (${liveClass.title})`);
         liveClass.status = 'Completed';
         liveClass.roomStatus = 'ended';
         liveClass.endedAt = new Date(payload.object.end_time || Date.now());
         await liveClass.save();
-        console.log(`Webhook: Meeting Ended for Class ${liveClass.title}`);
+        console.log(`Webhook: Successfully updated LiveClass status to Completed and endedAt to ${liveClass.endedAt}`);
+        
+        if (global.io) {
+          global.io.emit('liveClassUpdate', liveClass);
+        }
+      } else {
+        console.warn(`Webhook: meeting.ended received but LiveClass not found for zoomId ${meetingId}`);
       }
     } else if (event === 'meeting.participant_joined') {
       const meetingId = payload.object.id.toString();
