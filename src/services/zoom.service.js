@@ -81,6 +81,8 @@ exports.createZoomMeeting = async (liveClass) => {
   // Explicitly use the authenticated Academy Zoom account to create the meeting
   let userId = 'me';
   
+  console.log(`[Lifecycle] Attempting to create Zoom meeting via Zoom API for user: ${userId}, topic: "${payload.topic}"`);
+  
   try {
     let response = await fetch(`https://api.zoom.us/v2/users/${userId}/meetings`, {
       method: 'POST',
@@ -93,10 +95,12 @@ exports.createZoomMeeting = async (liveClass) => {
 
     if (!response.ok) {
       const data = await response.json();
+      console.error(`[Lifecycle] Failed to create Zoom meeting via API:`, data);
       throw new Error(`Failed to create Zoom meeting: ${data.message || 'Unknown error'}`);
     }
 
     const meetingData = await response.json();
+    console.log(`[Lifecycle] Zoom API meeting creation successful. Returned Meeting ID: ${meetingData.id}`);
     
     return {
       meetingId: meetingData.id.toString(),

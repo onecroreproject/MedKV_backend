@@ -86,15 +86,18 @@ exports.createLiveClass = async (req, res) => {
       const faculty = await User.findById(req.body.faculty);
       if (!faculty) throw new Error('Invalid faculty assigned to class');
       
+      console.log(`[Lifecycle] Creating Zoom meeting for class "${req.body.title}"...`);
       const zoomMeeting = await createZoomMeeting(req.body);
       req.body.zoomId = zoomMeeting.meetingId;
       req.body.zoomPasscode = zoomMeeting.passcode;
       req.body.zoomLink = zoomMeeting.joinUrl;
       req.body.zoomStartUrl = zoomMeeting.startUrl;
       req.body.hostZoomUserId = zoomMeeting.hostZoomUserId;
+      console.log(`[Lifecycle] Zoom meeting created successfully with ID: ${zoomMeeting.meetingId}, HostID: ${zoomMeeting.hostZoomUserId}`);
     }
 
     const liveClass = await LiveClass.create(req.body);
+    console.log(`[Lifecycle] LiveClass document created in DB. ID: ${liveClass._id}`);
 
     // Notify users based on access control
     let userIds = [];

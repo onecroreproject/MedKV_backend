@@ -131,9 +131,16 @@ exports.getSdkCredentials = async (req, res) => {
     }
 
     // Determine host status
-    const isAssignedFaculty = liveClass.faculty.toString() === user._id.toString();
+    const isAssignedFaculty = liveClass.faculty?.toString() === user._id.toString();
     const isAdmin = user.role === 'Admin';
     const isHost = isAssignedFaculty || isAdmin;
+    
+    console.log(`[Zoom SDK] liveClassId: ${liveClassId}`);
+    console.log(`[Zoom SDK] isAdmin: ${isAdmin}`);
+    console.log(`[Zoom SDK] isHost: ${isHost}`);
+    console.log(`[Zoom SDK] zoomId exists: ${!!liveClass.zoomId}`);
+    console.log(`[Zoom SDK] hostZoomUserId exists: ${!!liveClass.hostZoomUserId}`);
+    console.log(`[Lifecycle] getSdkCredentials called for class ${liveClassId} by user ${user.email} (Role: ${user.role}). Evaluated isHost: ${isHost}`);
 
     // Determine authorization
     let isAuthorized = isHost;
@@ -141,10 +148,10 @@ exports.getSdkCredentials = async (req, res) => {
     if (!isHost && user.role.match(/student/i)) {
       if (liveClass.accessControl === 'all') {
         isAuthorized = true;
-      } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents.includes(user._id)) {
+      } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents?.includes(user._id)) {
         isAuthorized = true;
       } else if (liveClass.accessControl === 'course') {
-        const isEnrolled = user.enrolledCourses.some(e => e.course.toString() === liveClass.course.toString());
+        const isEnrolled = user.enrolledCourses?.some(e => e.course?.toString() === liveClass.course?.toString());
         if (isEnrolled) {
           isAuthorized = true;
         }
@@ -182,7 +189,14 @@ exports.getSdkCredentials = async (req, res) => {
       tokenExp: exp
     };
 
-    const signature = jwt.sign(payload, sdkSecret, { header: { alg: 'HS256', typ: 'JWT' } });
+    let signature;
+    try {
+      signature = jwt.sign(payload, sdkSecret, { header: { alg: 'HS256', typ: 'JWT' } });
+      console.log(`[Zoom SDK] signature generation success`);
+    } catch (sigErr) {
+      console.error(`[Zoom SDK] signature generation failure:`, sigErr.message);
+      return res.status(500).json({ success: false, message: 'Failed to generate SDK signature.' });
+    }
 
     const responsePayload = {
       success: true,
@@ -197,18 +211,23 @@ exports.getSdkCredentials = async (req, res) => {
 
     if (isHost) {
       // Get ZAK token using the Academy's host ID or 'me'
+      console.log(`[Lifecycle] Fetching ZAK for host (Host ID: ${liveClass.hostZoomUserId || 'me'})...`);
       try {
         const zak = await getHostZak(liveClass.hostZoomUserId || 'me');
         responsePayload.zak = zak;
+        console.log(`[Lifecycle] ZAK fetched successfully for host ${user.email}`);
       } catch (err) {
+        console.error(`[Lifecycle] Error fetching ZAK for host:`, err.message);
         return res.status(400).json({ success: false, message: 'Failed to authenticate Admin with the Academy Zoom account.' });
       }
+    } else {
+      console.log(`[Lifecycle] Returning SDK payload for participant ${user.email}`);
     }
 
     res.status(200).json(responsePayload);
   } catch (error) {
-    console.error('Error getting Zoom SDK credentials:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    console.error('[Zoom SDK] Fatal error getting SDK credentials:', error.message);
+    res.status(500).json({ success: false, message: `Server Error: ${error.message}` });
   }
 };
 
@@ -339,31 +358,30 @@ exports.webhook = async (req, res) => {
         liveClass.roomStatus = 'active';
         if (!liveClass.startedAt) liveClass.startedAt = new Date(payload.object.start_time);
         await liveClass.save();
-        console.log(`Webhook: Meeting Started for Class ${liveClass.title}`);
+        console.log(`[Lifecycle] Webhook: Meeting Started for Class ${liveClass.title}`);
         
         if (global.io) {
           global.io.emit('liveClassUpdate', liveClass);
         }
       }
     } else if (event === 'meeting.ended') {
-      console.log('Webhook: Received meeting.ended payload:', JSON.stringify(payload, null, 2));
+      console.log(`[Lifecycle] Webhook: Received meeting.ended payload for meeting ID: ${payload.object?.id}`);
       const meetingId = payload.object.id.toString();
-      console.log(`Webhook: Extracted Zoom Meeting ID: ${meetingId}`);
       
       const liveClass = await LiveClass.findOne({ zoomId: meetingId }).sort({ date: -1 });
       if (liveClass) {
-        console.log(`Webhook: Found corresponding LiveClass: ${liveClass._id} (${liveClass.title})`);
+        console.log(`[Lifecycle] Webhook: Found corresponding LiveClass: ${liveClass._id} (${liveClass.title})`);
         liveClass.status = 'Completed';
         liveClass.roomStatus = 'ended';
         liveClass.endedAt = new Date(payload.object.end_time || Date.now());
         await liveClass.save();
-        console.log(`Webhook: Successfully updated LiveClass status to Completed and endedAt to ${liveClass.endedAt}`);
+        console.log(`[Lifecycle] Webhook: Successfully updated LiveClass status to Completed. DB ID: ${liveClass._id}`);
         
         if (global.io) {
           global.io.emit('liveClassUpdate', liveClass);
         }
       } else {
-        console.warn(`Webhook: meeting.ended received but LiveClass not found for zoomId ${meetingId}`);
+        console.warn(`[Lifecycle] Webhook: meeting.ended received but LiveClass not found for zoomId ${meetingId}`);
       }
     } else if (event === 'meeting.participant_joined') {
       const meetingId = payload.object.id.toString();
@@ -412,7 +430,7 @@ exports.webhook = async (req, res) => {
               }
             }
             await attendance.save();
-            console.log(`Webhook: Logged join for ${user.email} in ${liveClass.title}`);
+            console.log(`[Lifecycle] Webhook: Logged join for ${user.email} in ${liveClass.title}`);
           }
         }
       }
@@ -508,6 +526,7 @@ exports.webhook = async (req, res) => {
 
 exports.endMeeting = async (req, res) => {
   try {
+    console.log(`[Lifecycle] Admin initiated endMeeting for LiveClass: ${req.params.liveClassId}`);
     const liveClass = await LiveClass.findById(req.params.liveClassId);
     if (!liveClass) {
       return res.status(404).json({ success: false, message: 'Class not found' });
@@ -518,14 +537,16 @@ exports.endMeeting = async (req, res) => {
     }
 
     if (!liveClass.zoomId) {
-      console.warn(`[Zoom] zoomId is missing for class ${liveClass._id}. Skipping Zoom API termination, but will still mark local status as Completed.`);
+      console.warn(`[Lifecycle] [Zoom] zoomId is missing for class ${liveClass._id}. Skipping Zoom API termination, but will still mark local status as Completed.`);
     } else {
       // Call the service to forcefully end the meeting for all via Zoom API
       const { endZoomMeeting } = require('../services/zoom.service');
       try {
+        console.log(`[Lifecycle] Attempting to end Zoom meeting ID ${liveClass.zoomId} via Zoom API...`);
         await endZoomMeeting(liveClass.zoomId);
+        console.log(`[Lifecycle] Successfully ended Zoom meeting via Zoom API for ${liveClass.zoomId}`);
       } catch (zoomErr) {
-        console.warn(`[Zoom] Best-effort end failed for ${liveClass.zoomId}, but updating local status to Completed anyway.`, zoomErr.message);
+        console.warn(`[Lifecycle] [Zoom] Best-effort end failed for ${liveClass.zoomId}, but updating local status to Completed anyway.`, zoomErr.message);
       }
     }
 
@@ -534,6 +555,7 @@ exports.endMeeting = async (req, res) => {
     liveClass.endedAt = new Date();
     liveClass.roomStatus = 'ended';
     await liveClass.save();
+    console.log(`[Lifecycle] LiveClass ${liveClass._id} marked as Completed in DB.`);
 
     if (global.io) {
       global.io.emit('liveClassUpdate', liveClass);
