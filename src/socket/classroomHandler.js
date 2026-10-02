@@ -146,6 +146,23 @@ module.exports = (io, socket) => {
     });
   });
 
+  // ── Co-host assignment (host-only) ─────────────────────────────────────────
+  socket.on('class:assign-cohost', async ({ roomId, targetUserId, assign }) => {
+    try {
+      const validation = await validateClassAccess(uid, role, roomId);
+      if (!validation.valid || !validation.isTeacher) {
+        console.warn(`[CoHost] Blocked assign-cohost: not authorized uid=${uid} role=${role}`);
+        return;
+      }
+      const action = assign ? 'assigned' : 'removed';
+      console.log(`[CoHost] ${action} co-host: targetUserId=${targetUserId} by host=${uid} room=${roomId}`);
+      // Broadcast to everyone in room so ALL clients update their local coHosts state
+      io.to(roomId).emit('class:cohost-updated', { targetUserId: String(targetUserId), assign });
+    } catch (err) {
+      console.error('[CoHost] assign-cohost error:', err.message);
+    }
+  });
+
   // ── Raise hand ─────────────────────────────────────────────────────────────
   socket.on('class:raise-hand', async ({ roomId }) => {
     await validateAndExecute(roomId, async () => {
