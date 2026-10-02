@@ -173,8 +173,12 @@ exports.getHostZak = async (userId) => {
   });
 
   if (!response.ok) {
-    const data = await response.json();
-    throw new Error(`Failed to get ZAK: ${data.message || 'Unknown error'}`);
+    const data = await response.json().catch(() => ({}));
+    console.error(`[Zoom SDK] ZAK request failed`);
+    console.error(`[Zoom SDK] ZAK HTTP status: ${response.status}`);
+    console.error(`[Zoom SDK] ZAK Zoom error code: ${data.code || 'N/A'}`);
+    console.error(`[Zoom SDK] ZAK Zoom error message: ${data.message || data.reason || 'Unknown error'}`);
+    throw new Error(`[Zoom SDK] Failed to get ZAK (HTTP ${response.status}): ${data.message || data.reason || 'Unknown error'}`);
   }
   
   const data = await response.json();

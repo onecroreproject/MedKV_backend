@@ -170,7 +170,8 @@ exports.getSdkCredentials = async (req, res) => {
     const sdkSecret = process.env.ZOOM_SDK_SECRET;
 
     if (!sdkKey || !sdkSecret) {
-      return res.status(500).json({ success: false, message: 'Zoom SDK credentials are not configured.' });
+      console.error(`[Zoom SDK] ZOOM_SDK_KEY or ZOOM_SDK_SECRET is missing from environment variables.`);
+      return res.status(500).json({ success: false, message: 'Zoom SDK credentials are not configured on the server.' });
     }
 
     const meetingNumber = liveClass.zoomId;
@@ -192,7 +193,9 @@ exports.getSdkCredentials = async (req, res) => {
     let signature;
     try {
       signature = jwt.sign(payload, sdkSecret, { header: { alg: 'HS256', typ: 'JWT' } });
-      console.log(`[Zoom SDK] signature generation success`);
+      console.log(`[Zoom SDK] SDK JWT generated: true`);
+      console.log(`[Zoom SDK] role: ${role}`);
+      console.log(`[Zoom SDK] meetingNumber exists: true`);
     } catch (sigErr) {
       console.error(`[Zoom SDK] signature generation failure:`, sigErr.message);
       return res.status(500).json({ success: false, message: 'Failed to generate SDK signature.' });
@@ -210,15 +213,17 @@ exports.getSdkCredentials = async (req, res) => {
     };
 
     if (isHost) {
-      // Get ZAK token using the Academy's host ID or 'me'
-      console.log(`[Lifecycle] Fetching ZAK for host (Host ID: ${liveClass.hostZoomUserId || 'me'})...`);
+      console.log(`[Zoom SDK] Requesting ZAK`);
+      console.log(`[Zoom SDK] ZAK user ID exists: ${!!liveClass.hostZoomUserId}`);
+      // Safest architecture: ALWAYS request ZAK for 'me' because the Academy OAuth token owns the meeting.
+      console.log(`[Zoom SDK] ZAK request URL uses host account: true ('me')`);
       try {
-        const zak = await getHostZak(liveClass.hostZoomUserId || 'me');
+        const zak = await getHostZak('me');
         responsePayload.zak = zak;
-        console.log(`[Lifecycle] ZAK fetched successfully for host ${user.email}`);
+        console.log(`[Zoom SDK] ZAK request successful: true`);
       } catch (err) {
-        console.error(`[Lifecycle] Error fetching ZAK for host:`, err.message);
-        return res.status(400).json({ success: false, message: 'Failed to authenticate Admin with the Academy Zoom account.' });
+        console.error(`[Zoom SDK] ZAK request failed:`, err.message);
+        return res.status(400).json({ success: false, message: `Failed to authenticate Admin with the Academy Zoom account. ${err.message}` });
       }
     } else {
       console.log(`[Lifecycle] Returning SDK payload for participant ${user.email}`);
