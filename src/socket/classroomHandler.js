@@ -294,7 +294,7 @@ module.exports = (io, socket) => {
       if (isTeacher) return;
       const isCamDisabled = await isModerationCameraDisabled(roomId, uid);
       console.log(`[Classroom] isCamDisabled=${isCamDisabled} for user=${uid}`);
-      if (!isCamDisabled) return;
+      // Removed if (!isCamDisabled) return; to ensure requests always go through
       io.to(roomId).emit('class:camera-request', {
         roomId, userId: uid, name,
         timestamp: new Date().toISOString(),
