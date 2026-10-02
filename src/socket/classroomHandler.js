@@ -287,6 +287,37 @@ module.exports = (io, socket) => {
     });
   });
 
+  // ── Student: request to enable camera ──────────────────────────────────────
+  socket.on('class:request-camera', async ({ roomId }) => {
+    await validateAndExecute(roomId, async (isTeacher) => {
+      if (isTeacher) return;
+      const isCamDisabled = await isModerationCameraDisabled(roomId, uid);
+      if (!isCamDisabled) return;
+      io.to(roomId).emit('class:camera-request', {
+        roomId, userId: uid, name,
+        timestamp: new Date().toISOString(),
+      });
+    });
+  });
+
+  // ── Faculty: allow camera ──────────────────────────────────────────────────
+  socket.on('class:allow-camera', async ({ roomId, targetUserId }) => {
+    await validateFaculty(roomId, async () => {
+      await clearModerationCameraDisabled(roomId, targetUserId);
+      await lkMuteCamera(roomId, targetUserId, false);
+      const payload = { roomId, targetUserId, timestamp: new Date().toISOString() };
+      io.to(roomId).emit('class:camera-approved', payload);
+    });
+  });
+
+  // ── Faculty: request student to enable camera ──────────────────────────────
+  socket.on('class:host-request-camera', async ({ roomId, targetUserId }) => {
+    await validateFaculty(roomId, async () => {
+      if (!(await validateTarget(roomId, targetUserId))) return;
+      io.to(roomId).emit('class:host-requested-camera', { targetUserId });
+    });
+  });
+
   // ── Faculty: disable student camera ───────────────────────────────────────
   socket.on('class:disable-camera', async ({ roomId, targetUserId }) => {
     await validateFaculty(roomId, async () => {
