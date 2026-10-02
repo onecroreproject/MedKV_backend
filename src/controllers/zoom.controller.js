@@ -574,3 +574,72 @@ exports.endMeeting = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
+
+// @desc    Redirect Admin/Faculty to Zoom Start URL
+// @route   GET /api/v1/zoom/start/:liveClassId
+// @access  Private (Admin only)
+exports.startMeetingRedirect = async (req, res) => {
+  try {
+    if (req.user.role !== 'Admin') {
+      return res.status(403).send('Only Admins can start Zoom meetings.');
+    }
+
+    const liveClass = await LiveClass.findById(req.params.liveClassId);
+    if (!liveClass) {
+      return res.status(404).send('Live class not found.');
+    }
+
+    if (liveClass.meetingProvider !== 'zoom') {
+      return res.status(400).send('This is not a Zoom class.');
+    }
+
+    if (!liveClass.zoomStartUrl) {
+      return res.status(404).send('Zoom start URL not found for this class.');
+    }
+
+    // Redirect the admin to the native Zoom start URL
+    res.redirect(liveClass.zoomStartUrl);
+
+  } catch (error) {
+    console.error('Error in startMeetingRedirect:', error);
+    res.status(500).send('Server error');
+  }
+};
+
+// @desc    Redirect Student to Zoom Join URL
+// @route   GET /api/v1/zoom/join/:liveClassId
+// @access  Private (Students)
+exports.joinMeetingRedirect = async (req, res) => {
+  try {
+    const liveClass = await LiveClass.findById(req.params.liveClassId);
+    if (!liveClass) {
+      return res.status(404).send('Live class not found.');
+    }
+
+    if (liveClass.meetingProvider !== 'zoom') {
+      return res.status(400).send('This is not a Zoom class.');
+    }
+
+    if (!liveClass.zoomLink) {
+      return res.status(404).send('Zoom join link not found for this class.');
+    }
+
+    // Basic enrollment check for students
+    if (req.user.role !== 'Admin' && req.user.role !== 'Faculty') {
+      if (liveClass.course) {
+        // Verify user has purchased this course or has access
+        const hasAccess = req.user.courses && req.user.courses.some(c => c.toString() === liveClass.course.toString());
+        if (!hasAccess) {
+          return res.status(403).send('You are not enrolled in this course.');
+        }
+      }
+    }
+
+    // Redirect the student to the native Zoom join URL
+    res.redirect(liveClass.zoomLink);
+
+  } catch (error) {
+    console.error('Error in joinMeetingRedirect:', error);
+    res.status(500).send('Server error');
+  }
+};
