@@ -219,6 +219,17 @@ exports.startRecording = async (req, res) => {
       return res.status(400).json({ success: false, message: 'RECORDING_ALREADY_ACTIVE' });
     }
 
+    // Authoritative check with LiveKit to prevent double-click race conditions creating duplicate egresses
+    try {
+      const activeEgresses = await egressClient.listEgress({ roomName });
+      const hasActive = activeEgresses.some(e => e.status === 0 || e.status === 1 || e.status === 'EGRESS_STARTING' || e.status === 'EGRESS_ACTIVE');
+      if (hasActive) {
+        return res.status(400).json({ success: false, message: 'RECORDING_ALREADY_ACTIVE_ON_SERVER' });
+      }
+    } catch (err) {
+      console.warn('[Recording][Egress] Failed to list egresses before start, continuing...', err.message);
+    }
+
     const fileOutput = new EncodedFileOutput({
       fileType: EncodedFileType.MP4,
       filepath: `/out/recordings/class_${roomName}_{time}.mp4`
