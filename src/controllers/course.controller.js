@@ -80,11 +80,13 @@ exports.getCourse = async (req, res) => {
       const exists = courseObj.liveSessions.some(ls => ls.title === rec.title && ls.sessionType === 'Recording');
       if (!exists && !rec.lesson) {
         courseObj.liveSessions.push({
+          _id: rec._id,
           sessionType: 'Recording',
           title: `${courseObj.title} - Session ${sessionCounter}`,
           duration: rec.duration || 'Available',
           accessibility: 'Full Access',
-          accessTerms: 'Available 24/7'
+          accessTerms: 'Available 24/7',
+          videoUrl: rec.videoUrl
         });
         sessionCounter++;
       }
