@@ -43,30 +43,36 @@ module.exports = (io, socket) => {
   // Join a WebRTC Room
   socket.on('join-room', async (payload) => {
     const { roomId } = payload;
+    
+    console.log(`[LIFECYCLE: SOCKET.IO] 'join-room' received for roomId: ${roomId}`);
 
     // Identity ALWAYS from socket (set by io.use() middleware — JWT-verified)
     const userId   = socket.userId;
     const userRole = socket.userRole;
     const name     = socket.userName;
 
+    console.log(`[LIFECYCLE: SOCKET.IO] Authenticated User - ID: ${userId}, Name: ${name}, Role: ${userRole}`);
+
     socket.join(roomId);
     socket.roomId = roomId;
-    // Note: socket.userId / socket.userRole / socket.userName already set by io.use()
 
     if (!activeRooms[roomId]) {
+      console.log(`[LIFECYCLE: SOCKET.IO] Initializing new activeRoom in memory for ${roomId}`);
       activeRooms[roomId] = { teacher: null, students: {}, waiting: {}, admittedUsers: new Set(), teacherTimeout: null };
     }
 
     if (userRole?.toLowerCase() === 'faculty' || userRole?.toLowerCase() === 'teacher' || userRole?.toLowerCase() === 'admin') {
+      console.log(`[LIFECYCLE: SOCKET.IO] Processing HOST join logic for ${name}`);
       const room = activeRooms[roomId];
       if (room.teacherTimeout) {
         clearTimeout(room.teacherTimeout);
         room.teacherTimeout = null;
-        console.log(`Teacher ${name} reconnected to room ${roomId}, timer cleared.`);
+        console.log(`[LIFECYCLE: SOCKET.IO] Teacher ${name} reconnected to room ${roomId}, disconnect timer cleared.`);
       }
 
       room.teacher = socket.id;
-      console.log(`Teacher ${name} joined room ${roomId}`);
+      console.log(`[LIFECYCLE: SOCKET.IO] Teacher ${name} joined room ${roomId} with socket ID: ${socket.id}`);
+      
       // Notify everyone the teacher is here
       socket.to(roomId).emit('teacher-joined', { socketId: socket.id });
       
@@ -83,14 +89,16 @@ module.exports = (io, socket) => {
       });
       
       // Update DB to Active
+      console.log(`[LIFECYCLE: SOCKET.IO] Updating LiveClass DB status to 'active' for room: ${roomId}`);
       await LiveClass.updateOne({ _id: roomId }, { roomStatus: 'active', startedAt: new Date() });
       io.emit('liveClassUpdate');
     } else {
+      console.log(`[LIFECYCLE: SOCKET.IO] Processing STUDENT join logic for ${name}`);
       const room = activeRooms[roomId];
       if (room.admittedUsers.has(userId)) {
         // Auto-admit
         room.students[socket.id] = { userId, name };
-        console.log(`Student ${name} auto-admitted to room ${roomId}`);
+        console.log(`[LIFECYCLE: SOCKET.IO] Student ${name} auto-admitted (previously approved) to room ${roomId}`);
         socket.emit('admitted');
         
         if (room.teacher) {
@@ -98,12 +106,13 @@ module.exports = (io, socket) => {
         }
       } else {
         room.waiting[socket.id] = { userId, name };
-        console.log(`Student ${name} joined waiting room ${roomId}`);
+        console.log(`[LIFECYCLE: SOCKET.IO] Student ${name} placed in waiting room for ${roomId}`);
         // Notify student they are in waiting room
         socket.emit('joined-waiting-room');
         
         // Notify teacher that a student is waiting
         if (room.teacher) {
+          console.log(`[LIFECYCLE: SOCKET.IO] Notifying teacher that student ${name} is waiting.`);
           io.to(room.teacher).emit('student-waiting', { socketId: socket.id, name, userId });
         }
       }
@@ -111,6 +120,7 @@ module.exports = (io, socket) => {
 
     // Update active participants count in DB
     const participantCount = Object.keys(activeRooms[roomId].students).length;
+    console.log(`[LIFECYCLE: SOCKET.IO] Updating DB participant count to ${participantCount} for room ${roomId}`);
     await LiveClass.updateOne({ _id: roomId }, { liveParticipants: participantCount });
     
     // Broadcast to Admin
@@ -165,9 +175,11 @@ module.exports = (io, socket) => {
   // Admit Student from Waiting Room
   socket.on('admit-student', async (payload) => {
     const { targetId } = payload;
+    console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Action: admit-student, Room: ${socket.roomId}, Target Socket: ${targetId}`);
     const room = activeRooms[socket.roomId];
     if (room && room.waiting && room.waiting[targetId]) {
       const studentData = room.waiting[targetId];
+      console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Found student in waiting room: ${studentData.name} (${studentData.userId})`);
       // Add to session memory
       room.admittedUsers.add(studentData.userId);
       
@@ -176,8 +188,9 @@ module.exports = (io, socket) => {
         const { redisClient } = require('../config/redis');
         await redisClient.sAdd(`admitted:${socket.roomId}`, studentData.userId.toString());
         await redisClient.expire(`admitted:${socket.roomId}`, 4 * 3600);
+        console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Persisted admission to Redis for ${studentData.userId}`);
       } catch (err) {
-        console.error('Redis admit error:', err);
+        console.error(`[LIFECYCLE: SOCKET.IO ADMIN] Redis admit error:`, err);
       }
 
       // Move from waiting to students
@@ -185,10 +198,12 @@ module.exports = (io, socket) => {
       delete room.waiting[targetId];
 
       // Notify the student they are admitted
+      console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Emitting 'admitted' to student ${targetId}`);
       io.to(targetId).emit('admitted');
       
       // Notify the teacher to initiate WebRTC connection
       if (room.teacher) {
+        console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Notifying teacher that student ${targetId} joined`);
         io.to(room.teacher).emit('student-joined', { socketId: targetId, name: studentData.name, userId: studentData.userId });
       }
       
@@ -201,14 +216,21 @@ module.exports = (io, socket) => {
         { liveClass: socket.roomId, student: studentData.userId },
         { $setOnInsert: { joinTime: new Date() }, $set: { status: 'Present' } },
         { upsert: true, new: true }
-      ).exec().catch(err => console.error('Attendance track error:', err));
+      ).exec().catch(err => console.error(`[LIFECYCLE: SOCKET.IO ADMIN] Attendance track error:`, err));
+      
+      console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Student admission complete`);
+    } else {
+      console.warn(`[LIFECYCLE: SOCKET.IO ADMIN] Target student ${targetId} not found in waiting room`);
     }
   });
 
   // Admit All Students
   socket.on('admit-all', async () => {
+    console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Action: admit-all, Room: ${socket.roomId}`);
     const room = activeRooms[socket.roomId];
     if (room && room.waiting) {
+      const waitingCount = Object.keys(room.waiting).length;
+      console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Found ${waitingCount} students in waiting room`);
       const { redisClient } = require('../config/redis');
       
       for (const targetId of Object.keys(room.waiting)) {
@@ -219,7 +241,7 @@ module.exports = (io, socket) => {
         try {
           await redisClient.sAdd(`admitted:${socket.roomId}`, studentData.userId.toString());
         } catch (err) {
-          console.error('Redis admit error:', err);
+          console.error(`[LIFECYCLE: SOCKET.IO ADMIN] Redis admit error:`, err);
         }
         
         io.to(targetId).emit('admitted');
@@ -232,10 +254,11 @@ module.exports = (io, socket) => {
           { liveClass: socket.roomId, student: studentData.userId },
           { $setOnInsert: { joinTime: new Date() }, $set: { status: 'Present' } },
           { upsert: true, new: true }
-        ).exec().catch(err => console.error('Attendance track error:', err));
+        ).exec().catch(err => console.error(`[LIFECYCLE: SOCKET.IO ADMIN] Attendance track error:`, err));
       }
       try {
         await redisClient.expire(`admitted:${socket.roomId}`, 4 * 3600);
+        console.log(`[LIFECYCLE: SOCKET.IO ADMIN] Admit all complete and persisted to Redis`);
       } catch (err) {}
 
       room.waiting = {};
