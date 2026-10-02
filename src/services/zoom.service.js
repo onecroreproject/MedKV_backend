@@ -81,9 +81,32 @@ exports.createZoomMeeting = async (liveClass) => {
   // Explicitly use the authenticated Academy Zoom account to create the meeting
   let userId = 'me';
   
-  console.log(`[Lifecycle] Attempting to create Zoom meeting via Zoom API for user: ${userId}, topic: "${payload.topic}"`);
-  
   try {
+    // --- SAFE DIAGNOSTIC LOGGING ---
+    const userRes = await fetch('https://api.zoom.us/v2/users/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (userRes.ok) {
+      const user = await userRes.json();
+      let maskedEmail = user.email || 'unknown';
+      if (maskedEmail.includes('@')) {
+        const parts = maskedEmail.split('@');
+        maskedEmail = parts[0][0] + '***' + parts[0][parts[0].length - 1] + '@' + parts[1];
+      }
+      let maskedId = user.id || 'unknown';
+      if (maskedId.length > 6) {
+        maskedId = maskedId.substring(0, 3) + '***' + maskedId.substring(maskedId.length - 3);
+      }
+      console.log(`\n[Zoom Account] Connected account ID: ${maskedId}`);
+      console.log(`[Zoom Account] Connected account email: ${maskedEmail}`);
+      console.log(`[Zoom Account] Connected account name: ${user.first_name} ${user.last_name}\n`);
+    } else {
+      console.warn('[Zoom Account] Failed to verify /users/me identity before meeting creation.');
+    }
+    // ---------------------------------
+
+    console.log(`[Lifecycle] Attempting to create Zoom meeting via Zoom API for user: ${userId}, topic: "${payload.topic}"`);
+    
     let response = await fetch(`https://api.zoom.us/v2/users/${userId}/meetings`, {
       method: 'POST',
       headers: {
