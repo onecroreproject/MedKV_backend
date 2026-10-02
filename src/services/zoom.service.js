@@ -254,3 +254,29 @@ exports.reconcileStaleZoomClasses = async () => {
     console.error('[Zoom Recon] General reconciliation error:', error.message);
   }
 };
+
+exports.endZoomMeeting = async (meetingId) => {
+  try {
+    const token = await getValidToken();
+    const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/status`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'end' })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Zoom] Failed to end meeting ${meetingId}: ${errorText}`);
+      throw new Error('Failed to end Zoom meeting');
+    }
+    
+    console.log(`[Zoom] Successfully ended meeting ${meetingId}`);
+    return true;
+  } catch (error) {
+    console.error(`[Zoom] Error ending meeting ${meetingId}:`, error);
+    throw error;
+  }
+};

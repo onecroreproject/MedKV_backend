@@ -8,5 +8,6 @@ router.get('/oauth/authorize', protect, authorize('Admin'), zoomAuthorize);
 router.get('/oauth/callback', callback);
 router.get('/sdk-credentials/:liveClassId', protect, getSdkCredentials);
 router.post('/webhook', webhook);
+router.post('/end-meeting/:liveClassId', protect, authorize('Admin', 'Faculty'), require('../controllers/zoom.controller').endMeeting);
 
 module.exports = router;

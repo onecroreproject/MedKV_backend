@@ -504,3 +504,30 @@ exports.webhook = async (req, res) => {
     }
   }
 };
+
+exports.endMeeting = async (req, res) => {
+  try {
+    const liveClass = await LiveClass.findById(req.params.liveClassId);
+    if (!liveClass) {
+      return res.status(404).json({ success: false, message: 'Class not found' });
+    }
+
+    if (liveClass.meetingProvider !== 'zoom') {
+      return res.status(400).json({ success: false, message: 'Not a Zoom class' });
+    }
+
+    if (!liveClass.zoomId) {
+      return res.status(400).json({ success: false, message: 'Zoom ID not found for this class' });
+    }
+
+    // Call the service to forcefully end the meeting for all via Zoom API
+    const { endZoomMeeting } = require('../services/zoom.service');
+    await endZoomMeeting(liveClass.zoomId);
+
+    // Provide immediate feedback to the caller
+    res.status(200).json({ success: true, message: 'Meeting ended successfully. Status will update shortly.' });
+  } catch (error) {
+    console.error('Error forcefully ending Zoom meeting:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
