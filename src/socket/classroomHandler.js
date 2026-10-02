@@ -279,6 +279,14 @@ module.exports = (io, socket) => {
     });
   });
 
+  // ── Faculty: request student to unmute ──────────────────────────────────────
+  socket.on('class:host-request-unmute', async ({ roomId, targetUserId }) => {
+    await validateFaculty(roomId, async () => {
+      if (!(await validateTarget(roomId, targetUserId))) return;
+      io.to(roomId).emit('class:host-requested-unmute', { targetUserId });
+    });
+  });
+
   // ── Faculty: disable student camera ───────────────────────────────────────
   socket.on('class:disable-camera', async ({ roomId, targetUserId }) => {
     await validateFaculty(roomId, async () => {
