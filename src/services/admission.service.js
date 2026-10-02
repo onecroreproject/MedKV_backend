@@ -21,9 +21,11 @@ const validateClassAccess = async (userId, userRole, roomId) => {
   } 
   
   if (role === 'faculty' || role === 'teacher') {
-    // Allow any faculty to host/join the class. 
-    // If we strictly check liveClass.faculty === userId, substitute teachers will be locked out.
-    return { valid: true, isTeacher: true, liveClass };
+    if (liveClass.faculty && liveClass.faculty.toString() === userId.toString()) {
+      return { valid: true, isTeacher: true, liveClass };
+    }
+    // Faculty who did not organize the class join as students
+    return { valid: true, isTeacher: false, liveClass };
   }
 
   // Student check

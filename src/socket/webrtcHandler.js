@@ -61,7 +61,18 @@ module.exports = (io, socket) => {
       activeRooms[roomId] = { teacher: null, students: {}, waiting: {}, admittedUsers: new Set(), teacherTimeout: null };
     }
 
-    if (userRole?.toLowerCase() === 'faculty' || userRole?.toLowerCase() === 'teacher' || userRole?.toLowerCase() === 'admin') {
+    const liveClass = await LiveClass.findById(roomId);
+    
+    let isTeacher = false;
+    if (userRole?.toLowerCase() === 'admin') {
+      isTeacher = true;
+    } else if (userRole?.toLowerCase() === 'faculty' || userRole?.toLowerCase() === 'teacher') {
+      if (liveClass && liveClass.faculty && liveClass.faculty.toString() === userId.toString()) {
+        isTeacher = true;
+      }
+    }
+
+    if (isTeacher) {
       console.log(`[LIFECYCLE: SOCKET.IO] Processing HOST join logic for ${name}`);
       const room = activeRooms[roomId];
       if (room.teacherTimeout) {
