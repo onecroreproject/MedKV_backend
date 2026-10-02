@@ -995,31 +995,9 @@ exports.downloadRecording = async (req, res) => {
   try {
     const recording = await ClassRecording.findById(req.params.id);
     if (!recording) return res.status(404).json({ success: false, message: 'Recording not found' });
-    
-    // Security Audit: Fix IDOR vulnerability - Check if student is authorized to download this recording
+    // Strict anti-recording protection: Students are NEVER allowed to download recordings
     if (req.user.role.match(/student/i)) {
-      const LiveClass = require('../models/LiveClass.model');
-      const liveClass = await LiveClass.findOne({ _id: recording.roomName });
-      
-      let isAuthorized = false;
-      if (!liveClass) {
-        if (recording.course && req.user.enrolledCourses.some(e => e.course.toString() === recording.course.toString())) {
-          isAuthorized = true;
-        }
-      } else {
-        if (liveClass.accessControl === 'all') {
-          isAuthorized = true;
-        } else if (liveClass.accessControl === 'selected' && liveClass.selectedStudents.includes(req.user._id)) {
-          isAuthorized = true;
-        } else if (liveClass.accessControl === 'course') {
-          const isEnrolled = req.user.enrolledCourses.some(e => e.course.toString() === liveClass.course.toString());
-          if (isEnrolled) isAuthorized = true;
-        }
-      }
-
-      if (!isAuthorized) {
-        return res.status(403).json({ success: false, message: 'You are not authorized to download this recording.' });
-      }
+      return res.status(403).json({ success: false, message: 'Downloading recordings is strictly prohibited.' });
     }
 
     if (recording.recordingProvider === 'zoom') {
