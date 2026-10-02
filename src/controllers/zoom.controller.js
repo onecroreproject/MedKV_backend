@@ -522,10 +522,24 @@ exports.endMeeting = async (req, res) => {
 
     // Call the service to forcefully end the meeting for all via Zoom API
     const { endZoomMeeting } = require('../services/zoom.service');
-    await endZoomMeeting(liveClass.zoomId);
+    try {
+      await endZoomMeeting(liveClass.zoomId);
+    } catch (zoomErr) {
+      console.warn(`[Zoom] Best-effort end failed for ${liveClass.zoomId}, but updating local status to Completed anyway.`, zoomErr.message);
+    }
+
+    // Proactively update the status to Completed immediately for snappy UX
+    liveClass.status = 'Completed';
+    liveClass.endedAt = new Date();
+    liveClass.roomStatus = 'ended';
+    await liveClass.save();
+
+    if (global.io) {
+      global.io.emit('liveClassUpdate', liveClass);
+    }
 
     // Provide immediate feedback to the caller
-    res.status(200).json({ success: true, message: 'Meeting ended successfully. Status will update shortly.' });
+    res.status(200).json({ success: true, message: 'Meeting ended successfully.' });
   } catch (error) {
     console.error('Error forcefully ending Zoom meeting:', error);
     res.status(500).json({ success: false, message: 'Server error' });
