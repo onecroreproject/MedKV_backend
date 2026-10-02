@@ -13,8 +13,9 @@ async function checkRecentMeetings() {
         console.log('\n--- Most Recent Zoom Live Class ---');
         console.log('Title:', recentClass.title);
         console.log('Zoom ID:', recentClass.zoomId);
-        console.log('Host Zoom User ID:', recentClass.hostZoomUserId); // Does this exist? Let's check schema.
+        console.log('Host Zoom User ID:', recentClass.hostZoomUserId);
         console.log('Start URL:', recentClass.zoomStartUrl);
+        console.log('Join URL (zoomLink):', recentClass.zoomLink);
     } else {
         console.log('No recent Zoom classes found.');
     }

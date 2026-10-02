@@ -50,7 +50,15 @@ exports.getLiveClasses = async (req, res) => {
     query = query.sort({ date: 1, time: 1 });
 
     const classes = await query;
-    res.status(200).json({ success: true, count: classes.length, data: classes });
+    
+    // Strip sensitive zoomStartUrl
+    const sanitizedClasses = classes.map(c => {
+      const cls = c.toObject();
+      delete cls.zoomStartUrl;
+      return cls;
+    });
+
+    res.status(200).json({ success: true, count: sanitizedClasses.length, data: sanitizedClasses });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
@@ -70,7 +78,11 @@ exports.getLiveClass = async (req, res) => {
     if (!liveClass) {
       return res.status(404).json({ success: false, message: 'Class not found' });
     }
-    res.status(200).json({ success: true, data: liveClass });
+
+    const sanitizedClass = liveClass.toObject();
+    delete sanitizedClass.zoomStartUrl;
+
+    res.status(200).json({ success: true, data: sanitizedClass });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

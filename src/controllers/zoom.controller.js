@@ -597,6 +597,11 @@ exports.startMeetingRedirect = async (req, res) => {
       return res.status(404).send('Zoom start URL not found for this class.');
     }
 
+    // Safe Diagnostic Logging
+    console.log(`[Zoom Start] user role: ${req.user.role}`);
+    console.log(`[Zoom Start] liveClassId: ${liveClass._id}`);
+    console.log(`[Zoom Start] redirect type: HOST`);
+
     // Redirect the admin to the native Zoom start URL
     res.redirect(liveClass.zoomStartUrl);
 
@@ -634,6 +639,11 @@ exports.joinMeetingRedirect = async (req, res) => {
         }
       }
     }
+
+    // Safe Diagnostic Logging
+    console.log(`[Zoom Join] user role: ${req.user.role}`);
+    console.log(`[Zoom Join] liveClassId: ${liveClass._id}`);
+    console.log(`[Zoom Join] redirect type: PARTICIPANT`);
 
     // Redirect the student to the native Zoom join URL
     res.redirect(liveClass.zoomLink);
