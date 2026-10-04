@@ -115,3 +115,65 @@ exports.deleteStudent = async (req, res) => {
     });
   }
 };
+
+// @desc    Manually enroll student in a course
+// @route   POST /api/v1/students/:id/enroll
+// @access  Private (Admin)
+exports.enrollStudent = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    if (!courseId) {
+      return res.status(400).json({ success: false, message: 'Please provide courseId' });
+    }
+    const student = await User.findById(req.params.id);
+    if (!student || student.role !== 'Student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    const Course = require('../models/Course.model');
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+
+    const isEnrolled = student.enrolledCourses.some(ec => ec.course.toString() === courseId);
+    if (isEnrolled) {
+      return res.status(400).json({ success: false, message: 'Student is already enrolled in this course' });
+    }
+
+    let validUntil = null;
+    if (course.duration && course.duration !== 'lifetime') {
+      const days = parseInt(course.duration, 10);
+      if (!isNaN(days)) {
+        validUntil = new Date();
+        validUntil.setDate(validUntil.getDate() + days);
+      }
+    }
+
+    await User.findByIdAndUpdate(student._id, {
+      $push: { enrolledCourses: { course: course._id, progress: 0, validUntil } }
+    });
+    
+    await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: 1 } });
+    
+    // Also create a manual Payment record to keep DB consistent
+    const Payment = require('../models/Payment.model');
+    await Payment.create({
+      student: student._id,
+      course: course._id,
+      amount: 0, // Manual enrollment
+      currency: 'INR',
+      razorpayOrderId: 'MANUAL_ADMIN_ENROLL',
+      razorpayPaymentId: 'pay_manual_' + Date.now(),
+      type: 'Enrollment',
+      status: 'Success'
+    });
+
+    res.status(200).json({ success: true, message: 'Student enrolled successfully' });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Server Error',
+    });
+  }
+};

@@ -7,8 +7,9 @@ mongoose.connect(mongoUri).then(async () => {
   const Course = require('./src/models/Course.model');
   const Payment = require('./src/models/Payment.model');
   
-  const email = 'niveditavn4497@gmail.com';
-  const paymentId = 'pay_ThLLjsJPZlroWy';
+  const email = 'megha.damor26@gmail.com';
+  const paymentId = 'pay_TjQLnh9gi5EJ7M';
+  const courseId = '6aae81b19e7739c6e4987df2';
   
   // Find User
   const user = await User.findOne({ email });
@@ -19,7 +20,7 @@ mongoose.connect(mongoUri).then(async () => {
   console.log('Found user:', user.name);
   
   // Find Course
-  const course = await Course.findOne({ title: { $regex: 'Long Case', $options: 'i' } });
+  const course = await Course.findById(courseId);
   if (!course) {
     console.log('Course not found!');
     process.exit(1);
@@ -37,11 +38,11 @@ mongoose.connect(mongoUri).then(async () => {
       course: course._id,
       amount: 1024.17,
       currency: 'INR',
-      razorpayOrderId: 'MANUAL_RECOVERY', // We don't have the order ID from screenshot
+      razorpayOrderId: 'order_webhook_recovery',
       razorpayPaymentId: paymentId,
       type: 'Enrollment',
       status: 'Success',
-      createdAt: new Date('2026-09-28T11:05:00+05:30') // Approximate from screenshot
+      createdAt: new Date('2026-10-03T17:16:54+05:30')
     });
     console.log('Created Payment record:', payment._id);
   }
