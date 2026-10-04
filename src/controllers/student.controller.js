@@ -177,3 +177,43 @@ exports.enrollStudent = async (req, res) => {
     });
   }
 };
+
+// @desc    Manually unenroll student from a course
+// @route   POST /api/v1/students/:id/unenroll
+// @access  Private (Admin)
+exports.unenrollStudent = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    if (!courseId) {
+      return res.status(400).json({ success: false, message: 'Please provide courseId' });
+    }
+    const student = await User.findById(req.params.id);
+    if (!student || student.role !== 'Student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    const Course = require('../models/Course.model');
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ success: false, message: 'Course not found' });
+    }
+
+    const isEnrolled = student.enrolledCourses.some(ec => ec.course.toString() === courseId);
+    if (!isEnrolled) {
+      return res.status(400).json({ success: false, message: 'Student is not enrolled in this course' });
+    }
+
+    await User.findByIdAndUpdate(student._id, {
+      $pull: { enrolledCourses: { course: course._id } }
+    });
+    
+    await Course.findByIdAndUpdate(course._id, { $inc: { registrationCount: -1 } });
+
+    res.status(200).json({ success: true, message: 'Student unenrolled successfully' });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Server Error',
+    });
+  }
+};
