@@ -96,7 +96,28 @@ exports.createRecording = async (req, res) => {
     
     if (recording.course) {
       const courseObj = await Course.findById(recording.course);
-      if (courseObj && courseObj.price === 0) isFree = true;
+      if (courseObj) {
+        if (!courseObj.videoUploadedAt) {
+          courseObj.videoUploadedAt = new Date();
+          await courseObj.save();
+          
+          // Update validUntil for all currently enrolled students
+          if (courseObj.duration && courseObj.duration !== 'lifetime') {
+            const days = parseInt(courseObj.duration, 10);
+            if (!isNaN(days)) {
+              const validUntil = new Date(courseObj.videoUploadedAt);
+              validUntil.setDate(validUntil.getDate() + days);
+              
+              await User.updateMany(
+                { "enrolledCourses.course": courseObj._id },
+                { "$set": { "enrolledCourses.$[elem].validUntil": validUntil } },
+                { arrayFilters: [ { "elem.course": courseObj._id } ] }
+              );
+            }
+          }
+        }
+        if (courseObj.price === 0) isFree = true;
+      }
     }
     if (recording.lesson) {
       const lessonObj = await Lesson.findById(recording.lesson);

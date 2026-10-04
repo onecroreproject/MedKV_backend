@@ -144,8 +144,8 @@ exports.enrollStudent = async (req, res) => {
     let validUntil = null;
     if (course.duration && course.duration !== 'lifetime') {
       const days = parseInt(course.duration, 10);
-      if (!isNaN(days)) {
-        validUntil = new Date();
+      if (!isNaN(days) && course.videoUploadedAt) {
+        validUntil = new Date(course.videoUploadedAt);
         validUntil.setDate(validUntil.getDate() + days);
       }
     }

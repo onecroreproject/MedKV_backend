@@ -120,6 +120,10 @@ const courseSchema = new mongoose.Schema({
   registrationCount: {
     type: Number,
     default: 0
+  },
+  videoUploadedAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true,
