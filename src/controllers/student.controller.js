@@ -217,3 +217,43 @@ exports.unenrollStudent = async (req, res) => {
     });
   }
 };
+
+// @desc    Toggle student active status (Suspend/Activate)
+// @route   PATCH /api/v1/students/:id/toggle-status
+// @access  Private (Admin)
+exports.toggleStudentStatus = async (req, res) => {
+  try {
+    const student = await User.findById(req.params.id);
+    if (!student || student.role !== 'Student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    
+    // Toggle the status (default is true if not set)
+    const currentStatus = student.isActive !== false;
+    student.isActive = !currentStatus;
+    await student.save();
+
+    // Send email notification about account status change
+    const title = student.isActive ? 'Account Activated' : 'Account Suspended';
+    const message = student.isActive 
+      ? 'Your account has been successfully activated. You can now access your courses and learning materials.'
+      : 'Your account has been suspended by an administrator. Please contact support for more information.';
+      
+    await createAndSendNotification(
+      [student._id],
+      { title, message, type: 'system' },
+      true // Sends email as well
+    );
+
+    res.status(200).json({ 
+      success: true, 
+      message: `Student account ${student.isActive ? 'activated' : 'suspended'} successfully`,
+      isActive: student.isActive 
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: err.message || 'Server Error',
+    });
+  }
+};

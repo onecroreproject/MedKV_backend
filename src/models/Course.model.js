@@ -57,17 +57,9 @@ const courseSchema = new mongoose.Schema({
     type: String, // e.g. "30", "90", "180", "365", "lifetime"
     default: "lifetime"
   },
-  startDate: {
-    type: String,
-    default: ''
-  },
-  startTime: {
-    type: String,
-    default: ''
-  },
-  endTime: {
-    type: String,
-    default: ''
+  videoUploadedAt: {
+    type: Date,
+    default: null
   },
   level: {
     type: String,
@@ -85,12 +77,8 @@ const courseSchema = new mongoose.Schema({
   }],
   liveSessions: [{
     sessionType: { type: String, enum: ['Live', 'Recording'] },
-    title: String,
     date: String,
-    time: String,
-    duration: String,
-    accessibility: String,
-    accessTerms: String
+    time: String
   }],
   pacsCases: [{
     title: String,
