@@ -49,7 +49,10 @@ exports.createOrder = async (req, res) => {
     
     let totalPayable = basePrice;
     if (basePrice > 0) {
-      totalPayable = Math.round((basePrice / 0.9764) * 100) / 100;
+      const gstOnCourse = Math.round((basePrice * 0.18) * 100) / 100;
+      const subTotal = basePrice + gstOnCourse;
+      const processingFee = Math.round((subTotal * 0.02) * 100) / 100;
+      totalPayable = Math.round((subTotal + processingFee) * 100) / 100;
     } else {
       totalPayable = 1; // Fallback for razorpay minimum
     }
@@ -125,14 +128,14 @@ exports.verifyPayment = async (req, res) => {
     }
     
     let totalPayable = basePrice;
+    let gstOnCourse = 0;
     let paymentProcessingFee = 0;
-    let gstOnProcessingFee = 0;
     
     if (basePrice > 0) {
-      totalPayable = Math.round((basePrice / 0.9764) * 100) / 100;
-      const totalProcessingFee = totalPayable - basePrice;
-      paymentProcessingFee = Math.round((totalPayable * 0.02) * 100) / 100;
-      gstOnProcessingFee = totalProcessingFee - paymentProcessingFee;
+      gstOnCourse = Math.round((basePrice * 0.18) * 100) / 100;
+      const subTotal = basePrice + gstOnCourse;
+      paymentProcessingFee = Math.round((subTotal * 0.02) * 100) / 100;
+      totalPayable = Math.round((subTotal + paymentProcessingFee) * 100) / 100;
     }
     
     const userDoc = await User.findById(userId);
@@ -251,7 +254,7 @@ exports.verifyPayment = async (req, res) => {
       const pdfBuffer = await generateReceiptPDF(paymentData);
 
       // Email the student with the PDF attachment
-      const message = `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}.\n\nPayment Summary:\nCourse Fee: ₹${basePrice.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nGST on Processing Fee: ₹${gstOnProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your detailed payment receipt attached.\n\nHappy Learning!`;
+      const message = `Dear ${userDoc.name},\n\nThank you for enrolling in ${course.title}.\n\nPayment Summary:\nCourse Fee: ₹${basePrice.toFixed(2)}\nGST (18%): ₹${gstOnCourse.toFixed(2)}\nPayment Processing Fee: ₹${paymentProcessingFee.toFixed(2)}\nTotal Amount Paid: ₹${totalPayable.toFixed(2)}\n\nPlease find your detailed payment receipt attached.\n\nHappy Learning!`;
       const htmlMessage = `
         <p>Dear <strong>${userDoc.name}</strong>,</p>
         <p>Thank you for enrolling in <strong>${course.title}</strong>! We are thrilled to have you.</p>
@@ -259,8 +262,8 @@ exports.verifyPayment = async (req, res) => {
           <h3 style="margin-top: 0; color: #0B1F4D;">Payment Summary</h3>
           <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Course Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right; font-weight: bold;">₹${basePrice.toFixed(2)}</td></tr>
-            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Processing Fee:</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${paymentProcessingFee.toFixed(2)}</td></tr>
-            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">GST (18% on Processing):</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${gstOnProcessingFee.toFixed(2)}</td></tr>
+            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">GST (18%):</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${gstOnCourse.toFixed(2)}</td></tr>
+            <tr><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee;">Processing Fee (2%):</td><td style="padding: 8px 0; border-bottom: 1px solid #eeeeee; text-align: right;">₹${paymentProcessingFee.toFixed(2)}</td></tr>
             <tr><td style="padding: 12px 0 0 0; color: #0B1F4D; font-weight: bold;">Total Amount Paid:</td><td style="padding: 12px 0 0 0; text-align: right; color: #0B1F4D; font-weight: bold; font-size: 18px;">₹${totalPayable.toFixed(2)}</td></tr>
           </table>
         </div>
@@ -321,9 +324,11 @@ exports.getAllPayments = async (req, res) => {
 // @access  Private (Admin)
 exports.downloadSampleReceipt = async (req, res) => {
   try {
-    const baseAmount = Math.round(4999 * 0.9764 * 100) / 100;
-    const paymentProcessingFee = Math.round(4999 * 0.02 * 100) / 100;
-    const gstOnProcessingFee = Math.round((4999 - baseAmount - paymentProcessingFee) * 100) / 100;
+    const totalPayable = 4999;
+    const subTotal = Math.round((totalPayable / 1.02) * 100) / 100;
+    const baseAmount = Math.round((subTotal / 1.18) * 100) / 100;
+    const gstOnCourse = Math.round((baseAmount * 0.18) * 100) / 100;
+    const paymentProcessingFee = Math.round((subTotal * 0.02) * 100) / 100;
 
     const paymentData = {
       razorpayPaymentId: 'pay_SAMPLE1234567',
@@ -332,8 +337,9 @@ exports.downloadSampleReceipt = async (req, res) => {
       courseName: 'Sample Medical Course',
       amount: 4999,
       baseAmount,
+      gstOnCourse,
+      subTotal,
       paymentProcessingFee,
-      gstOnProcessingFee,
       currency: 'INR',
       type: 'Enrollment'
     };
@@ -367,9 +373,10 @@ exports.downloadReceipt = async (req, res) => {
     }
 
     const totalPayable = payment.amount || 0;
-    const baseAmount = Math.round(totalPayable * 0.9764 * 100) / 100;
-    const paymentProcessingFee = Math.round(totalPayable * 0.02 * 100) / 100;
-    const gstOnProcessingFee = Math.round((totalPayable - baseAmount - paymentProcessingFee) * 100) / 100;
+    const subTotal = Math.round((totalPayable / 1.02) * 100) / 100;
+    const baseAmount = Math.round((subTotal / 1.18) * 100) / 100;
+    const gstOnCourse = Math.round((baseAmount * 0.18) * 100) / 100;
+    const paymentProcessingFee = Math.round((subTotal * 0.02) * 100) / 100;
 
     const paymentData = {
       razorpayPaymentId: payment.razorpayPaymentId,
@@ -379,8 +386,9 @@ exports.downloadReceipt = async (req, res) => {
       courseDuration: payment.course?.duration,
       amount: totalPayable,
       baseAmount,
+      gstOnCourse,
+      subTotal,
       paymentProcessingFee,
-      gstOnProcessingFee,
       currency: payment.currency,
       type: payment.type || 'Enrollment',
       invoiceNumber: `INV-${payment._id.toString().slice(-6).toUpperCase()}`
@@ -415,9 +423,10 @@ exports.resendReceipt = async (req, res) => {
     }
 
     const totalPayable = payment.amount || 0;
-    const baseAmount = Math.round(totalPayable * 0.9764 * 100) / 100;
-    const paymentProcessingFee = Math.round(totalPayable * 0.02 * 100) / 100;
-    const gstOnProcessingFee = Math.round((totalPayable - baseAmount - paymentProcessingFee) * 100) / 100;
+    const subTotal = Math.round((totalPayable / 1.02) * 100) / 100;
+    const baseAmount = Math.round((subTotal / 1.18) * 100) / 100;
+    const gstOnCourse = Math.round((baseAmount * 0.18) * 100) / 100;
+    const paymentProcessingFee = Math.round((subTotal * 0.02) * 100) / 100;
 
     const paymentData = {
       razorpayPaymentId: payment.razorpayPaymentId,
@@ -426,8 +435,9 @@ exports.resendReceipt = async (req, res) => {
       courseName: payment.course.title,
       amount: totalPayable,
       baseAmount,
+      gstOnCourse,
+      subTotal,
       paymentProcessingFee,
-      gstOnProcessingFee,
       currency: payment.currency,
       type: payment.type || 'Enrollment'
     };

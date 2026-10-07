@@ -158,21 +158,26 @@ exports.generateReceiptPDF = (paymentData) => {
       doc.font('Helvetica-Bold').text('Course Fee', 360, footerY + 12);
       doc.text(baseAmtStr, 480, footerY + 12, { width: 75, align: 'right' });
 
-      let yOffset = footerY + 40;
+      let yOffset = footerY + 30;
+      doc.font('Helvetica').text('GST @ 18%', 360, yOffset);
+      doc.text(`${paymentData.currency} ${paymentData.gstOnCourse || '0'}`, 480, yOffset, { width: 75, align: 'right' });
+      
+      yOffset += 15;
+      doc.font('Helvetica-Bold').text('SUBTOTAL (COURSE + GST)', 360, yOffset);
+      doc.text(`${paymentData.currency} ${paymentData.subTotal || '0'}`, 480, yOffset, { width: 75, align: 'right' });
+
+      yOffset += 20;
       if (paymentData.paymentProcessingFee > 0) {
-        doc.font('Helvetica').text('Processing Fee', 360, yOffset);
+        doc.font('Helvetica').text('Processing Fee (2%)', 360, yOffset);
         doc.text(`${paymentData.currency} ${paymentData.paymentProcessingFee}`, 480, yOffset, { width: 75, align: 'right' });
-        yOffset += 15;
-        doc.text('GST (18% on Processing)', 360, yOffset);
-        doc.text(`${paymentData.currency} ${paymentData.gstOnProcessingFee}`, 480, yOffset, { width: 75, align: 'right' });
         yOffset += 20;
       } else {
-        yOffset += 35; // keep spacing consistent if free
+        yOffset += 20; 
       }
 
       doc.moveTo(350, yOffset - 10).lineTo(565, yOffset - 10).stroke('#cccccc');
       
-      doc.font('Helvetica-Bold').text('Total', 360, yOffset - 2);
+      doc.font('Helvetica-Bold').text('TOTAL AMOUNT PAYABLE', 360, yOffset - 2);
       doc.text(totalAmtStr, 480, yOffset - 2, { width: 75, align: 'right' });
 
       // Balance Due Box
