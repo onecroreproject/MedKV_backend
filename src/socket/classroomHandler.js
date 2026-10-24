@@ -16,6 +16,8 @@ const {
 } = require('../services/classroom.service');
 const { validateClassAccess } = require('../services/admission.service');
 const { redisClient } = require('../config/redis');
+const Attendance = require('../models/Attendance.model');
+const LiveClass = require('../models/LiveClass.model');
 
 const ALLOWED_REACTIONS = ['❤️', '👍', '🎉', '👏', '😂', '😮', '😢', '🤔', '👎'];
 const MAX_MSG_LENGTH = 1000;
@@ -123,6 +125,13 @@ module.exports = (io, socket) => {
       console.log(`[SOCKET] socket joined room=${roomId}`);
       socket.classroomRoomId = roomId;
       socket.classroomUserId = uid;
+      socket.classroomJoinTime = Date.now();
+
+      // Increment liveParticipants on LiveClass
+      LiveClass.findByIdAndUpdate(roomId, {
+        $inc: { liveParticipants: 1 },
+        $set: { roomStatus: 'active' }
+      }).catch(err => console.warn('[Classroom] Failed to increment liveParticipants:', err.message));
 
       const hands = await getRaisedHands(roomId);
       socket.emit('class:raised-hands-list', hands);
@@ -170,6 +179,12 @@ module.exports = (io, socket) => {
       socket.classroomRoomId = roomId;
       socket.classroomUserId = uid;
       io.to(roomId).emit('class:hand-updated', { userId: uid, action: 'raised' });
+
+      // Track hand raise in attendance
+      Attendance.findOneAndUpdate(
+        { liveClass: roomId, student: uid },
+        { $inc: { handRaises: 1 } }
+      ).catch(() => {});
     });
   });
 
@@ -231,6 +246,12 @@ module.exports = (io, socket) => {
         roomId,
       };
       io.to(roomId).emit('class:chat-message', chatMessage);
+
+      // Track chat message count in attendance
+      Attendance.findOneAndUpdate(
+        { liveClass: roomId, student: uid },
+        { $inc: { chatMessages: 1 } }
+      ).catch(() => {});
     });
   });
 
@@ -355,6 +376,12 @@ module.exports = (io, socket) => {
         reason: 'Removed by faculty',
         timestamp: new Date().toISOString(),
       };
+      // Mark kicked in attendance
+      Attendance.findOneAndUpdate(
+        { liveClass: roomId, student: targetUserId },
+        { $set: { isKicked: true } }
+      ).catch(() => {});
+
       // Notify the whole room so tiles update
       io.to(roomId).emit('class:participant-removed', { roomId, targetUserId });
       // Direct notification to the removed student — they may not be in the LK room yet but in the socket room
@@ -373,8 +400,29 @@ module.exports = (io, socket) => {
 
   // ── Cleanup on disconnect ──────────────────────────────────────────────────
   socket.on('disconnect', async () => {
+    if (socket.classroomRoomId) {
+      // Decrement live participants count
+      LiveClass.findByIdAndUpdate(socket.classroomRoomId, {
+        $inc: { liveParticipants: -1 }
+      }).catch(() => {});
+
+      // Calculate attendance duration for student
+      if (socket.classroomUserId && socket.userRole === 'Student') {
+        const now = new Date();
+        const durationMin = socket.classroomJoinTime 
+          ? Math.max(1, Math.round((now.getTime() - socket.classroomJoinTime) / 60000))
+          : 1;
+
+        Attendance.findOneAndUpdate(
+          { liveClass: socket.classroomRoomId, student: socket.classroomUserId },
+          { 
+            $set: { leaveTime: now },
+            $inc: { duration: durationMin }
+          }
+        ).catch(err => console.error('[Classroom] Attendance duration update error:', err.message));
+      }
+    }
     // Note: Do NOT remove raised hands or moderation state on socket disconnect.
     // Temporary network drops should not cause users to lose their state.
-    // The state is cleaned up when the class ends or explicitly lowered.
   });
 };

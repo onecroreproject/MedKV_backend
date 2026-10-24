@@ -189,16 +189,19 @@ exports.verifyPayment = async (req, res) => {
           const count = courseNames.length;
           const avgProgress = count > 0 ? Math.round(totalProgress / count) : 0;
 
-          const axios = require('axios');
-          await axios.post(process.env.GOOGLE_SHEETS_WEBHOOK_URL, {
-            name: populatedUser.name,
-            email: populatedUser.email,
-            phoneNumber: populatedUser.phoneNumber || "",
-            isActive: populatedUser.isActive,
-            registeredDate: new Date().toISOString(),
-            courseCount: count,
-            courseNames: courseNames.join(", "),
-            avgProgress: `${avgProgress}%`
+          await fetch(process.env.GOOGLE_SHEETS_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: populatedUser.name,
+              email: populatedUser.email,
+              phoneNumber: populatedUser.phoneNumber || "",
+              isActive: populatedUser.isActive,
+              registeredDate: new Date().toISOString(),
+              courseCount: count,
+              courseNames: courseNames.join(", "),
+              avgProgress: `${avgProgress}%`
+            })
           });
           console.log('Successfully pushed enrollment to Google Sheets');
         } catch (err) {

@@ -4,6 +4,31 @@ const {
   removeStudentFromWaitingRoom, 
   getWaitingStudents 
 } = require('../services/admission.service');
+const Attendance = require('../models/Attendance.model');
+
+const recordStudentAttendance = async (roomId, studentId) => {
+  try {
+    await Attendance.findOneAndUpdate(
+      { liveClass: roomId, student: studentId },
+      {
+        $setOnInsert: {
+          liveClass: roomId,
+          student: studentId,
+          joinTime: new Date(),
+          status: 'Present',
+          provider: 'webrtc'
+        },
+        $push: {
+          joinSessions: { joinTime: new Date() }
+        }
+      },
+      { upsert: true, new: true }
+    );
+    console.log(`[ADMISSION] Attendance tracked for student=${studentId} in room=${roomId}`);
+  } catch (err) {
+    console.error(`[ADMISSION] Failed to record attendance for student=${studentId}:`, err.message);
+  }
+};
 
 module.exports = (io, socket) => {
   // Identity ALWAYS from authenticated socket
@@ -36,6 +61,7 @@ module.exports = (io, socket) => {
       if (isAdmitted) {
         socket.join(`waiting:${roomId}`);
         socket.emit('class:admitted');
+        recordStudentAttendance(roomId, uid);
         return;
       }
 
@@ -111,6 +137,7 @@ module.exports = (io, socket) => {
 
         io.to(student.socketId).emit('class:admitted');
         io.to(roomId).emit('class:student-left-waiting', { userId: targetStr });
+        recordStudentAttendance(roomId, targetStr);
 
         console.log(`[ADMISSION] ✅ admitted user=${targetStr} name=${student.name} by faculty=${uid} room=${roomId}`);
       } else {
