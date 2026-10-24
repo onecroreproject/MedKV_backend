@@ -55,7 +55,7 @@ const normalizeEgressStatus = (status) => {
 };
 
 // Helper to trigger merge
-const triggerMergeIfReady = async (recordingId) => {
+const triggerMergeIfReady = async (recordingId, io = null) => {
   const traceId = `REC-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
     const recording = await ClassRecording.findById(recordingId);
@@ -85,6 +85,16 @@ const triggerMergeIfReady = async (recordingId) => {
         console.error('[Recording] Recording ID:', recordingId);
         console.error('[Recording] Error: No valid segments to merge');
         console.error('[Recording] ========================================');
+
+        const socketIo = io || global.io;
+        if (socketIo) {
+          socketIo.to(recording.roomName).emit('class:recording-failed', {
+            roomId: recording.roomName,
+            recordingId: recording._id,
+            status: 'failed',
+            message: recording.errorMessage
+          });
+        }
         return;
       }
 
@@ -183,6 +193,18 @@ const triggerMergeIfReady = async (recordingId) => {
         console.log('[Recording] File:', finalOutputPath);
         console.log('[Recording] ========================================');
 
+        const socketIo = io || global.io;
+        if (socketIo) {
+          console.log('[Recording][Socket] Broadcasting recording-completed');
+          socketIo.to(recording.roomName).emit('class:recording-completed', {
+            roomId: recording.roomName,
+            recordingId: recording._id,
+            status: 'completed',
+            endedAt: recording.endedAt,
+            duration: totalDuration
+          });
+        }
+
       } catch (mergeError) {
         console.error('[Recording][FFmpeg] MERGE FAILED');
         console.error('[Recording][FFmpeg] Message:', mergeError.message);
@@ -202,6 +224,17 @@ const triggerMergeIfReady = async (recordingId) => {
         console.error('[Recording] Recording ID:', recordingId);
         console.error('[Recording] Error:', mergeError.message);
         console.error('[Recording] ========================================');
+
+        const socketIo = io || global.io;
+        if (socketIo) {
+          console.log('[Recording][Socket] Broadcasting recording-failed');
+          socketIo.to(recording.roomName).emit('class:recording-failed', {
+            roomId: recording.roomName,
+            recordingId: recording._id,
+            status: 'failed',
+            message: recording.errorMessage
+          });
+        }
       }
     }
   } catch(error) {
@@ -412,11 +445,13 @@ exports.pauseRecording = async (req, res) => {
     
     console.log('[Recording][Auth] Checking recording permission');
     console.log('[Recording][Auth] User ID:', req.user?._id);
-    console.log('[Recording][Auth] Assigned Host ID:', liveClass.faculty);
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin';
+    const isAssignedFaculty = liveClass.faculty && liveClass.faculty.toString() === req.user._id.toString();
+    const isFaculty = userRole === 'faculty' || userRole === 'teacher';
+
+    if (!isAdmin && !isAssignedFaculty && !isFaculty) {
       console.error('[Recording][Auth] RECORDING ACCESS DENIED');
-      console.error('[Recording][Auth] User ID:', req.user?._id);
-      console.error('[Recording][Auth] Role:', req.user?.role);
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
     console.log('[Recording][Auth] Authorized:', true);
@@ -444,7 +479,27 @@ exports.pauseRecording = async (req, res) => {
     await recording.save();
     console.log('[Recording][Pause] Mongo updated');
 
-    res.status(200).json({ success: true, data: recording });
+    let accumulatedDuration = 0;
+    recording.segments.forEach(s => {
+      if (s.duration) {
+        accumulatedDuration += s.duration;
+      } else if (s.startedAt) {
+        accumulatedDuration += Math.floor((Date.now() - new Date(s.startedAt).getTime()) / 1000);
+      }
+    });
+
+    const io = req.app.get('io') || global.io;
+    if (io) {
+      console.log('[Recording][Socket] Broadcasting recording-paused');
+      io.to(roomName).emit('class:recording-paused', {
+        roomId: roomName,
+        recordingId: recording._id,
+        status: 'paused',
+        accumulatedDuration
+      });
+    }
+
+    res.status(200).json({ success: true, data: recording, accumulatedDuration });
   } catch (error) {
     console.error('[Recording][Error]', {
       operation: 'PAUSE',
@@ -478,8 +533,12 @@ exports.resumeRecording = async (req, res) => {
     
     console.log('[Recording][Auth] Checking recording permission');
     console.log('[Recording][Auth] User ID:', req.user?._id);
-    console.log('[Recording][Auth] Assigned Host ID:', liveClass.faculty);
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin';
+    const isAssignedFaculty = liveClass.faculty && liveClass.faculty.toString() === req.user._id.toString();
+    const isFaculty = userRole === 'faculty' || userRole === 'teacher';
+
+    if (!isAdmin && !isAssignedFaculty && !isFaculty) {
       console.error('[Recording][Auth] RECORDING ACCESS DENIED');
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
@@ -516,17 +575,38 @@ exports.resumeRecording = async (req, res) => {
       throw err;
     }
 
+    const resumedAt = new Date();
     recording.recordingState = 'recording';
     recording.activeEgressId = info.egressId;
     recording.segments.push({
       egressId: info.egressId,
       status: 'EGRESS_STARTING',
-      startedAt: new Date()
+      startedAt: resumedAt
     });
 
     await recording.save();
     console.log('[Recording][Resume] Mongo updated');
-    res.status(200).json({ success: true, data: recording });
+
+    let accumulatedDuration = 0;
+    recording.segments.forEach(s => {
+      if (s.duration) {
+        accumulatedDuration += s.duration;
+      }
+    });
+
+    const io = req.app.get('io') || global.io;
+    if (io) {
+      console.log('[Recording][Socket] Broadcasting recording-resumed');
+      io.to(roomName).emit('class:recording-resumed', {
+        roomId: roomName,
+        recordingId: recording._id,
+        status: 'recording',
+        startedAt: resumedAt,
+        accumulatedDuration
+      });
+    }
+
+    res.status(200).json({ success: true, data: recording, accumulatedDuration });
   } catch (error) {
     console.error('[Recording][Error]', {
       operation: 'RESUME',
@@ -594,9 +674,7 @@ exports.stopRecording = async (req, res) => {
     await recording.save();
     console.log('[Recording][Stop] Mongo updated');
 
-    await triggerMergeIfReady(recording._id);
-
-    const io = req.app.get('io');
+    const io = req.app.get('io') || global.io;
     if (io) {
       console.log('[Recording][Socket] Broadcasting recording-stopping');
       io.to(roomName).emit('class:recording-stopping', {
@@ -605,6 +683,8 @@ exports.stopRecording = async (req, res) => {
         status: 'stopping'
       });
     }
+
+    await triggerMergeIfReady(recording._id, io);
 
     res.status(200).json({ success: true, data: recording });
   } catch (error) {
@@ -814,8 +894,9 @@ exports.livekitWebhook = async (req, res) => {
           seg.fileSize = fileSize;
           await recording.save();
 
-          const io = req.app.get('io');
-          if (io) {
+          const io = req.app.get('io') || global.io;
+          // Only emit recording-completed if recording is actively being processed/finalized, NOT while paused
+          if (io && recording.recordingState === 'processing') {
             if (normalizedStatus === 'EGRESS_COMPLETE') {
               console.log('[Recording][Socket] Broadcasting recording-completed');
             } else {
@@ -833,10 +914,18 @@ exports.livekitWebhook = async (req, res) => {
           }
         }
         
-        if (recording.recordingState === 'processing' || recording.recordingState === 'recording') {
-          recording.recordingState = 'processing';
-          await recording.save();
-          await triggerMergeIfReady(recording._id);
+        // Only trigger merge if recording is in processing state (stop was triggered)
+        if (recording.recordingState === 'processing') {
+          await triggerMergeIfReady(recording._id, req.app.get('io') || global.io);
+        } else if (recording.recordingState === 'recording') {
+          // If a segment unexpectedly ended while in recording state without user pause/stop
+          const normalizedStatus = normalizeEgressStatus(egressInfo.status || 'EGRESS_COMPLETE');
+          if (normalizedStatus !== 'EGRESS_ACTIVE' && normalizedStatus !== 'EGRESS_STARTING') {
+            console.log('[Recording][Webhook] Egress ended unexpectedly during recording state. Transitioning to processing.');
+            recording.recordingState = 'processing';
+            await recording.save();
+            await triggerMergeIfReady(recording._id, req.app.get('io') || global.io);
+          }
         }
       }
     } else if (event.event === 'room_finished' && event.room?.name) {
