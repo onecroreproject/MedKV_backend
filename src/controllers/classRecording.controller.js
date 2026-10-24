@@ -297,7 +297,7 @@ exports.startRecording = async (req, res) => {
         roomName,
         { file: fileOutput },
         { 
-          layout: 'grid', 
+          layout: 'single-speaker', 
           encodingOptions: getLectureEncodingOptions(),
           videoOnly: false, 
           audioOnly: false 
@@ -502,7 +502,7 @@ exports.resumeRecording = async (req, res) => {
         roomName, 
         { file: fileOutput }, 
         { 
-          layout: 'grid', 
+          layout: 'single-speaker', 
           encodingOptions: getLectureEncodingOptions(),
           videoOnly: false, 
           audioOnly: false 
