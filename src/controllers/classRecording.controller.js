@@ -2,10 +2,24 @@ const fs = require('fs');
 const path = require('path');
 const ClassRecording = require('../models/ClassRecording.model');
 const LiveClass = require('../models/LiveClass.model');
-const { EgressClient, EncodedFileOutput, EncodedFileType } = require('livekit-server-sdk');
+const { EgressClient, EncodedFileOutput, EncodedFileType, EncodingOptions } = require('livekit-server-sdk');
 const { mergeSegments } = require('../utils/ffmpegMerge');
 
 const EGRESS_DIR = '/opt/livekit/egress/recordings/';
+
+// Zoom-grade encoding profile for lectures and radiology presentations:
+// 720p at 15 fps, 350 kbps video + 64 kbps voice audio.
+// Keeps slides & CT scans crisp while reducing file size from ~1.2 GB/hr down to ~150-180 MB/hr.
+const getLectureEncodingOptions = () => {
+  return new EncodingOptions({
+    width: 1280,
+    height: 720,
+    framerate: 15,
+    videoBitrate: 350,
+    audioBitrate: 64,
+    keyFrameInterval: 4
+  });
+};
 
 const getEgressHost = () => {
   const raw = process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com';
@@ -282,7 +296,12 @@ exports.startRecording = async (req, res) => {
       info = await egressClient.startRoomCompositeEgress(
         roomName,
         { file: fileOutput },
-        { layout: 'grid', videoOnly: false, audioOnly: false }
+        { 
+          layout: 'grid', 
+          encodingOptions: getLectureEncodingOptions(),
+          videoOnly: false, 
+          audioOnly: false 
+        }
       );
       console.log('[Recording][Egress] API SUCCESS');
       console.log('[Recording][Egress] Egress ID:', info?.egressId);
@@ -479,8 +498,16 @@ exports.resumeRecording = async (req, res) => {
     console.log('[Recording][Resume] LiveKit request started');
     let info;
     try {
-      info = await egressClient.startRoomCompositeEgress(roomName, { file: fileOutput }, { layout: 'grid', customBaseUrl: 'https://recording.drsamreefathradiologyacademy.com', videoOnly: false, audioOnly: false });
-      console.log('[Recording][Resume] LiveKit response received');
+      info = await egressClient.startRoomCompositeEgress(
+        roomName, 
+        { file: fileOutput }, 
+        { 
+          layout: 'grid', 
+          encodingOptions: getLectureEncodingOptions(),
+          videoOnly: false, 
+          audioOnly: false 
+        }
+      );
       console.log('[Recording][Resume] New Egress ID:', info?.egressId);
     } catch(err) {
       console.error('[Recording][Resume] API FAILED');
