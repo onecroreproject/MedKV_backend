@@ -425,10 +425,11 @@ module.exports = (io, socket) => {
   // ── Cleanup on disconnect ──────────────────────────────────────────────────
   socket.on('disconnect', async () => {
     if (socket.classroomRoomId) {
-      // Decrement live participants count
-      LiveClass.findByIdAndUpdate(socket.classroomRoomId, {
-        $inc: { liveParticipants: -1 }
-      }).catch(() => {});
+      // Decrement live participants count (never below 0)
+      LiveClass.findOneAndUpdate(
+        { _id: socket.classroomRoomId, liveParticipants: { $gt: 0 } },
+        { $inc: { liveParticipants: -1 } }
+      ).catch(() => {});
 
       // Calculate attendance duration for student
       const roleStr = (socket.userRole || '').toLowerCase();

@@ -131,6 +131,29 @@ const triggerMergeIfReady = async (recordingId) => {
         console.log('[Recording][Mongo] Recording ID:', recordingId);
         console.log('[Recording][Mongo] Status:', 'completed');
 
+        // Automatically sync with main Recording model for Admin Panel & Student Portal
+        try {
+          const Recording = require('../models/Recording.model');
+          const durationMinutes = Math.max(1, Math.round(totalDuration / 60));
+          await Recording.findOneAndUpdate(
+            { liveClass: recording.roomName },
+            {
+              title: recording.title || 'Live Class Recording',
+              course: recording.course,
+              faculty: recording.teacher,
+              liveClass: recording.roomName,
+              videoUrl: `/api/v1/class-recordings/${recording._id}/stream`,
+              duration: `${durationMinutes}m`,
+              isPublished: true,
+              compressionStatus: 'none'
+            },
+            { upsert: true, new: true }
+          );
+          console.log('[Recording][Mongo] Synchronized with Recording model for liveClass:', recording.roomName);
+        } catch (syncErr) {
+          console.error('[Recording][Mongo] Failed to sync with Recording model:', syncErr.message);
+        }
+
         for (const segPath of pathsToMerge) {
           try { if (fs.existsSync(segPath)) fs.unlinkSync(segPath); } catch(e) {}
         }
@@ -781,9 +804,22 @@ exports.livekitWebhook = async (req, res) => {
           }
         }
         
-        if (recording.recordingState === 'processing') {
+        if (recording.recordingState === 'processing' || recording.recordingState === 'recording') {
+          recording.recordingState = 'processing';
+          await recording.save();
           await triggerMergeIfReady(recording._id);
         }
+      }
+    } else if (event.event === 'room_finished' && event.room?.name) {
+      const roomName = event.room.name;
+      console.log('[Recording][Webhook] Room finished event for:', roomName);
+      const recording = await ClassRecording.findOne({ roomName, recordingState: 'recording' });
+      if (recording) {
+        console.log('[Recording][Webhook] Room finished while recording active, transitioning to processing:', recording._id);
+        recording.recordingState = 'processing';
+        recording.activeEgressId = null;
+        await recording.save();
+        await triggerMergeIfReady(recording._id);
       }
     } else if (event.event === 'egress_updated') {
       console.log('[Recording][Webhook] EGRESS_UPDATED');
