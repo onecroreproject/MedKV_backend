@@ -298,6 +298,7 @@ exports.startRecording = async (req, res) => {
         { file: fileOutput },
         { 
           layout: 'single-speaker', 
+          customBaseUrl: process.env.LIVEKIT_RECORDING_TEMPLATE_URL || 'https://recording.drsamreefathradiologyacademy.com',
           encodingOptions: getLectureEncodingOptions(),
           videoOnly: false, 
           audioOnly: false 
@@ -503,6 +504,7 @@ exports.resumeRecording = async (req, res) => {
         { file: fileOutput }, 
         { 
           layout: 'single-speaker', 
+          customBaseUrl: process.env.LIVEKIT_RECORDING_TEMPLATE_URL || 'https://recording.drsamreefathradiologyacademy.com',
           encodingOptions: getLectureEncodingOptions(),
           videoOnly: false, 
           audioOnly: false 
