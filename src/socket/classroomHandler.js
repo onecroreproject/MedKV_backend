@@ -202,7 +202,7 @@ module.exports = (io, socket) => {
       await addRaisedHand(roomId, uid);
       socket.classroomRoomId = roomId;
       socket.classroomUserId = uid;
-      io.to(roomId).emit('class:hand-updated', { userId: uid, action: 'raised' });
+      io.to(roomId).emit('class:hand-updated', { userId: uid, name: name || socket.userName, action: 'raised' });
 
       // Track hand raise in attendance
       Attendance.findOneAndUpdate(
