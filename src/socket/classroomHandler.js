@@ -133,6 +133,30 @@ module.exports = (io, socket) => {
         $set: { roomStatus: 'active' }
       }).catch(err => console.warn('[Classroom] Failed to increment liveParticipants:', err.message));
 
+      // Immediately record attendance on join for student
+      const roleStr = (socket.userRole || role || '').toLowerCase();
+      const isStudent = roleStr !== 'admin' && roleStr !== 'faculty' && roleStr !== 'teacher';
+      if (isStudent && uid) {
+        Attendance.findOneAndUpdate(
+          { liveClass: roomId, student: uid },
+          {
+            $setOnInsert: {
+              liveClass: roomId,
+              student: uid,
+              joinTime: new Date(),
+              status: 'Present',
+              provider: 'webrtc'
+            },
+            $push: {
+              joinSessions: { joinTime: new Date() }
+            }
+          },
+          { upsert: true, new: true }
+        )
+        .then(doc => console.log(`[Classroom] Attendance recorded for student=${uid} in room=${roomId}:`, doc?._id))
+        .catch(err => console.error('[Classroom] Attendance upsert error on room-join:', err.message));
+      }
+
       const hands = await getRaisedHands(roomId);
       socket.emit('class:raised-hands-list', hands);
 
@@ -407,7 +431,9 @@ module.exports = (io, socket) => {
       }).catch(() => {});
 
       // Calculate attendance duration for student
-      if (socket.classroomUserId && socket.userRole === 'Student') {
+      const roleStr = (socket.userRole || '').toLowerCase();
+      const isStudent = roleStr !== 'admin' && roleStr !== 'faculty' && roleStr !== 'teacher';
+      if (socket.classroomUserId && isStudent) {
         const now = new Date();
         const durationMin = socket.classroomJoinTime 
           ? Math.max(1, Math.round((now.getTime() - socket.classroomJoinTime) / 60000))

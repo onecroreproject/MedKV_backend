@@ -7,8 +7,13 @@ const { mergeSegments } = require('../utils/ffmpegMerge');
 
 const EGRESS_DIR = '/opt/livekit/egress/recordings/';
 
+const getEgressHost = () => {
+  const raw = process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com';
+  return raw.replace('wss://', 'https://').replace('ws://', 'http://');
+};
+
 const egressClient = new EgressClient(
-  process.env.LIVEKIT_URL || 'https://livekit.drsamreefathradiologyacademy.com', // Should ideally use HTTP/WS internal URL if possible, or public
+  getEgressHost(),
   process.env.LIVEKIT_API_KEY,
   process.env.LIVEKIT_API_SECRET
 );
@@ -200,8 +205,12 @@ exports.startRecording = async (req, res) => {
 
     console.log('[Recording][Auth] Checking recording permission');
     console.log('[Recording][Auth] User ID:', req.user?._id);
-    console.log('[Recording][Auth] Assigned Host ID:', liveClass.faculty);
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin';
+    const isAssignedFaculty = liveClass.faculty && liveClass.faculty.toString() === req.user._id.toString();
+    const isFaculty = userRole === 'faculty' || userRole === 'teacher';
+
+    if (!isAdmin && !isAssignedFaculty && !isFaculty) {
       console.error('[Recording][Auth] RECORDING ACCESS DENIED');
       console.error('[Recording][Auth] User ID:', req.user?._id);
       console.error('[Recording][Auth] Role:', req.user?.role);
@@ -209,8 +218,12 @@ exports.startRecording = async (req, res) => {
     }
     console.log('[Recording][Auth] Authorized:', true);
 
-    if (liveClass.roomStatus !== 'active') {
+    if (liveClass.roomStatus !== 'active' && liveClass.status !== 'Live Now') {
       return res.status(400).json({ success: false, message: 'CLASS_NOT_ACTIVE' });
+    }
+    if (liveClass.roomStatus !== 'active') {
+      liveClass.roomStatus = 'active';
+      await liveClass.save();
     }
 
     let recording = await ClassRecording.findOne({ roomName, recordingState: { $in: ['idle', 'recording', 'paused', 'processing'] } });
@@ -495,8 +508,12 @@ exports.stopRecording = async (req, res) => {
     
     console.log('[Recording][Auth] Checking recording permission');
     console.log('[Recording][Auth] User ID:', req.user?._id);
-    console.log('[Recording][Auth] Assigned Host ID:', liveClass.faculty);
-    if (liveClass.faculty.toString() !== req.user._id.toString() && req.user.role !== 'Admin') {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin';
+    const isAssignedFaculty = liveClass.faculty && liveClass.faculty.toString() === req.user._id.toString();
+    const isFaculty = userRole === 'faculty' || userRole === 'teacher';
+
+    if (!isAdmin && !isAssignedFaculty && !isFaculty) {
       console.error('[Recording][Auth] RECORDING ACCESS DENIED');
       return res.status(403).json({ success: false, message: 'RECORDING_UNAUTHORIZED' });
     }
