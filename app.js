@@ -89,6 +89,7 @@ app.use('/api/v1/webrtc', webrtcRoutes);
 app.use('/api/v1/settings', require('./src/routes/settings.routes'));
 app.use('/api/v1/progress', require('./src/routes/progress.routes'));
 app.use('/api/v1/notifications', require('./src/routes/notification.routes'));
+app.use('/api/v1/promotions', require('./src/routes/promotion.routes'));
 app.use('/api/v1/search', require('./src/routes/search.routes'));
 app.use('/api/v1/payment', require('./src/routes/payment.routes'));
 app.use('/api/v1/tickets', require('./src/routes/ticket.routes'));

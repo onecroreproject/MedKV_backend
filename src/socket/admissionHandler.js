@@ -148,6 +148,59 @@ module.exports = (io, socket) => {
     }
   });
 
+  // ── Faculty admits all waiting students ────────────────────────────────────
+  const handleAdmitAll = async (payload) => {
+    try {
+      const roomId = payload?.roomId || socket.waitingRoomId || socket.classroomRoomId;
+      if (!roomId) {
+        console.warn(`[ADMISSION] admit-all received without roomId`);
+        return;
+      }
+      console.log(`[ADMISSION] class:admit-all received faculty=${uid} role=${role} roomId=${roomId}`);
+
+      const validation = await validateClassAccess(uid, role, roomId);
+      if (!validation.valid || !validation.isTeacher) {
+        console.warn(`[ADMISSION] admit-all BLOCKED - not authorized faculty=${uid} role=${role}`);
+        return;
+      }
+
+      const waitingStudents = await getWaitingStudents(roomId);
+      console.log(`[ADMISSION] admit-all count=${waitingStudents.length}`);
+      if (!waitingStudents || waitingStudents.length === 0) return;
+
+      const { redisClient } = require('../config/redis');
+
+      for (const student of waitingStudents) {
+        try {
+          const targetStr = String(student.userId);
+          await removeStudentFromWaitingRoom(roomId, targetStr);
+          await redisClient.sAdd(`admitted:${roomId}`, targetStr);
+
+          if (student.socketId) {
+            io.to(student.socketId).emit('class:admitted');
+          }
+          io.to(targetStr).emit('class:admitted');
+          io.to(roomId).emit('class:student-left-waiting', { userId: targetStr });
+          recordStudentAttendance(roomId, targetStr);
+
+          console.log(`[ADMISSION] ✅ admitted user=${targetStr} name=${student.name} via admit-all`);
+        } catch (sErr) {
+          console.error(`[ADMISSION] Error admitting student in admit-all:`, sErr);
+        }
+      }
+
+      await redisClient.expire(`admitted:${roomId}`, 4 * 3600);
+      io.to(`waiting:${roomId}`).emit('class:admitted');
+      io.to(roomId).emit('class:waiting-students-list', []);
+      console.log(`[ADMISSION] ✅ admit-all finished for room=${roomId}`);
+    } catch (err) {
+      console.error('[Admission] admit-all error:', err.message);
+    }
+  };
+
+  socket.on('class:admit-all', handleAdmitAll);
+  socket.on('admit-all', handleAdmitAll);
+
   // ── Faculty rejects a student ──────────────────────────────────────────────
   socket.on('class:reject-student', async (payload) => {
     try {

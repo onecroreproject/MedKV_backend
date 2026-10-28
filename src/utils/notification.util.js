@@ -42,7 +42,7 @@ const createAndSendNotification = async (userIds, notificationData, sendEmailFla
           const htmlMessage = `
             <p>Hi <strong>${user.name}</strong>,</p>
             <div style="background-color: #f9fafb; padding: 20px; border-left: 4px solid #0B1F4D; margin: 25px 0;">
-              <p style="margin: 0; font-size: 16px;">${notificationData.message}</p>
+              <div style="margin: 0; font-size: 16px; white-space: pre-line; line-height: 1.6;">${notificationData.message}</div>
               ${notificationData.calendarLink ? `
                 <div style="margin-top: 20px;">
                   <a href="${notificationData.calendarLink}" style="background-color: #fff; border: 1px solid #dcdcdc; color: #333; padding: 10px 18px; text-decoration: none; border-radius: 4px; display: inline-block; font-size: 14px; font-weight: bold;">
@@ -53,10 +53,11 @@ const createAndSendNotification = async (userIds, notificationData, sendEmailFla
             </div>
             ${!notificationData.link ? '<p>Best regards,<br/><strong>Dr. Sam Reefath Radiology Academy</strong></p>' : ''}
           `;
+          const ctaText = notificationData.type === 'promotional' ? 'Explore Course' : (notificationData.link ? 'View Details' : null);
           const html = generateHTMLTemplate(
             notificationData.title, 
             htmlMessage, 
-            notificationData.link ? 'View Details' : null, 
+            ctaText, 
             notificationData.link || null
           );
 

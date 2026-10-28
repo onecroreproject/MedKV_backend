@@ -59,6 +59,9 @@ const sendEmail = async (options) => {
     transporterConfig.host = process.env.SMTP_HOST || 'sandbox.smtp.mailtrap.io';
     transporterConfig.port = parseInt(process.env.SMTP_PORT) || 2525;
     transporterConfig.secure = transporterConfig.port === 465;
+    transporterConfig.tls = {
+      rejectUnauthorized: false
+    };
   }
 
   const transporter = nodemailer.createTransport(transporterConfig);
